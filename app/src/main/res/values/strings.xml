@@ -1,0 +1,4 @@
+<resources>
+    <string name="app_name">LocalParty</string>
+    <string name="file_provider_authority">com.crakac.localparty.provider</string>
+</resources>
