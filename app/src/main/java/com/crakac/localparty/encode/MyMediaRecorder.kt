@@ -24,11 +24,11 @@ class MyMediaRecorder(
 
     private val videoEncoder = VideoEncoder(width, height, this)
     private val audioEncoder = AudioEncoder(this)
+    private val audioDecoder = AACDecoder()
 
     private var isMuxerAvailable = false
     private var trackCount = 0
     private val trackIds = MutableList(NUM_TRACKS) { UNINITIALIZED }
-
 
     override fun onFormatChanged(format: MediaFormat, type: Encoder.Type) {
         val index = type.ordinal
@@ -40,12 +40,20 @@ class MyMediaRecorder(
                 muxer.start()
                 isMuxerAvailable = true
             }
+            if (type == Encoder.Type.Audio) {
+                audioDecoder.configure(format)
+                audioDecoder.start()
+            }
         }
     }
 
     override fun onEncoded(buffer: ByteBuffer, info: MediaCodec.BufferInfo, type: Encoder.Type) {
         if (!isMuxerAvailable) return
         val trackId = trackIds[type.ordinal]
+        if (type == Encoder.Type.Audio) {
+            buffer.position(info.offset).limit(info.offset + info.size)
+            audioDecoder.put(buffer, info.size, info.presentationTimeUs)
+        }
         muxer.writeSampleData(trackId, buffer, info)
     }
 
@@ -64,11 +72,13 @@ class MyMediaRecorder(
     fun stop() {
         videoEncoder.stop()
         audioEncoder.stop()
+        audioDecoder.stop()
         muxer.stop()
     }
 
     fun release() {
         videoEncoder.release()
         audioEncoder.release()
+        audioDecoder.release()
     }
 }
