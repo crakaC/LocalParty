@@ -50,7 +50,7 @@ class AudioEncoder(private val callback: Encoder.Callback) : Encoder {
 
     private val format: MediaFormat =
         MediaFormat.createAudioFormat(MIME_TYPE_AAC, SAMPLE_RATE, CHANNEL_COUNT).apply {
-            setInteger(MediaFormat.KEY_AAC_PROFILE, MediaCodecInfo.CodecProfileLevel.AACObjectHE)
+            setInteger(MediaFormat.KEY_AAC_PROFILE, MediaCodecInfo.CodecProfileLevel.AACObjectLC)
             setInteger(MediaFormat.KEY_BIT_RATE, BIT_RATE)
             setInteger(MediaFormat.KEY_MAX_INPUT_SIZE, audioBufferSizeInBytes)
         }

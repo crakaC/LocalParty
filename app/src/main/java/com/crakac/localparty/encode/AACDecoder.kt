@@ -37,6 +37,7 @@ class AACDecoder : Decoder {
                 .build()
         )
         .setPerformanceMode(AudioTrack.PERFORMANCE_MODE_LOW_LATENCY)
+        .setBufferSizeInBytes(4 * 1024)
         .setTransferMode(AudioTrack.MODE_STREAM)
         .build()
 
