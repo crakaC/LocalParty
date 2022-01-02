@@ -9,8 +9,8 @@ import java.util.concurrent.LinkedBlockingDeque
 private val TAG = AACDecoder::class.simpleName
 
 class AACDecoder : Decoder {
-    private val readScope = Codec.createSingleThreadScope("read")
-    private val writeScope = Codec.createSingleThreadScope("write")
+    private val readScope = createSingleThreadScope("read")
+    private val writeScope = createSingleThreadScope("write")
     private var readJob: Job? = null
     private var writeJob: Job? = null
 
@@ -19,6 +19,10 @@ class AACDecoder : Decoder {
     private val decodeBuffer = ByteArray(16 * 1024)
 
     private val codec = MediaCodec.createDecoderByType(MediaFormat.MIMETYPE_AUDIO_AAC)
+    private val format =
+        MediaFormat.createAudioFormat(MediaFormat.MIMETYPE_AUDIO_AAC, 44100, 1).apply {
+            setByteBuffer("csd-0", ByteBuffer.wrap(byteArrayOf(0x11.toByte(), 0x90.toByte())))
+        }
 
     private val queue = LinkedBlockingDeque<Sample>()
 
@@ -47,11 +51,8 @@ class AACDecoder : Decoder {
         queue.offer(Sample(data, presentationTimeUs))
     }
 
-    fun configure(format: MediaFormat) {
-        codec.configure(format, null, null, 0)
-    }
-
     override fun prepare() {
+        codec.configure(format, null, null, 0)
     }
 
     override fun start() {

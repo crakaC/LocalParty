@@ -40,10 +40,6 @@ class MyMediaRecorder(
                 muxer.start()
                 isMuxerAvailable = true
             }
-            if (type == Encoder.Type.Audio) {
-                audioDecoder.configure(format)
-                audioDecoder.start()
-            }
         }
     }
 
@@ -62,11 +58,13 @@ class MyMediaRecorder(
         trackIds.replaceAll { UNINITIALIZED }
         videoEncoder.prepare()
         audioEncoder.prepare()
+        audioDecoder.prepare()
     }
 
     fun start() {
         videoEncoder.start()
         audioEncoder.start()
+        audioDecoder.start()
     }
 
     fun stop() {

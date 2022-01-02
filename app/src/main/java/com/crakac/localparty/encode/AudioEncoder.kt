@@ -19,8 +19,8 @@ private const val BIT_RATE = 64 * 1024 // 64kbps
 private const val TAG = "AudioEncoder"
 
 class AudioEncoder(private val callback: Encoder.Callback) : Encoder {
-    private val readScope = Codec.createSingleThreadScope("read")
-    private val writeScope = Codec.createSingleThreadScope("write")
+    private val readScope = createSingleThreadScope("read")
+    private val writeScope = createSingleThreadScope("write")
     private var readJob: Job? = null
     private var writeJob: Job? = null
 
@@ -58,8 +58,8 @@ class AudioEncoder(private val callback: Encoder.Callback) : Encoder {
     private val codec = MediaCodec.createEncoderByType(MIME_TYPE_AAC)
 
     // https://github.com/google/mediapipe/blob/master/mediapipe/java/com/google/mediapipe/components/MicrophoneHelper.java
-    private val audioTimestamp = AudioTimestamp()
     private fun getTimestamp(framePosition: Long): Long {
+        val audioTimestamp = AudioTimestamp()
         audioRecord.getTimestamp(audioTimestamp, AudioTimestamp.TIMEBASE_MONOTONIC)
         val referenceFrame = audioTimestamp.framePosition
         val referenceTimestamp = audioTimestamp.nanoTime
