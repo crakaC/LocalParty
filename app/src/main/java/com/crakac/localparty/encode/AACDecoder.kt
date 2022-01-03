@@ -15,7 +15,6 @@ class AACDecoder : Decoder {
     private var writeJob: Job? = null
 
     override val decoderType = Decoder.Type.Audio
-
     private val decodeBuffer = ByteArray(16 * 1024)
 
     private val codec = MediaCodec.createDecoderByType(MediaFormat.MIMETYPE_AUDIO_AAC)
@@ -45,9 +44,7 @@ class AACDecoder : Decoder {
         .setTransferMode(AudioTrack.MODE_STREAM)
         .build()
 
-    fun put(buffer: ByteBuffer, size: Int, presentationTimeUs: Long) {
-        val data = ByteArray(size)
-        buffer.get(data)
+    override fun enqueue(data: ByteArray, presentationTimeUs: Long) {
         queue.offer(Sample(data, presentationTimeUs))
     }
 
@@ -127,23 +124,7 @@ class AACDecoder : Decoder {
         audioTrack.release()
     }
 
-    private data class Sample(val data: ByteArray, val presentationTimeUs: Long) {
-        override fun equals(other: Any?): Boolean {
-            if (this === other) return true
-            if (javaClass != other?.javaClass) return false
-
-            other as Sample
-
-            if (presentationTimeUs != other.presentationTimeUs) return false
-            if (!data.contentEquals(other.data)) return false
-
-            return true
-        }
-
-        override fun hashCode(): Int {
-            var result = data.contentHashCode()
-            result = 31 * result + presentationTimeUs.hashCode()
-            return result
-        }
+    fun releaseBuffer(bufferId: Int) {
+        codec.releaseOutputBuffer(bufferId, false)
     }
 }

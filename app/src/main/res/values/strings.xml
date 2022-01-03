@@ -1,4 +1,5 @@
 <resources>
     <string name="app_name">LocalParty</string>
     <string name="file_provider_authority">com.crakac.localparty.provider</string>
+    <string name="stop">Stop</string>
 </resources>

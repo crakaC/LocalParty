@@ -1,4 +1,4 @@
-package com.crakac.localparty.ui.theme
+package com.crakac.localparty.ui.screen
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -19,6 +19,8 @@ import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import com.crakac.localparty.ConnectionManager
 import com.crakac.localparty.R
+import com.crakac.localparty.ui.theme.LocalPartyTheme
+import com.crakac.localparty.ui.theme.Shapes
 
 
 @Composable
@@ -43,7 +45,6 @@ fun MainContent(
     endpointStatuses: List<Pair<String, ConnectionManager.EndpointState>> = emptyList(),
     onClickEndpoint: (endpointId: String, state: ConnectionManager.EndpointState) -> Unit = { _, _ -> },
     onClickStart: () -> Unit = {},
-    onClickStop: () -> Unit = {},
 ) {
     LazyColumn(
         state = rememberLazyListState()
@@ -74,13 +75,6 @@ fun MainContent(
         onClick = onClickStart
     ) {
         Text("Start")
-    }
-    Spacer(Modifier.height(16.dp))
-    Button(
-        modifier = Modifier.width(120.dp),
-        onClick = onClickStop
-    ) {
-        Text("Stop")
     }
 }
 

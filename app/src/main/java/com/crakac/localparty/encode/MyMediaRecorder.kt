@@ -14,8 +14,13 @@ private const val UNINITIALIZED = -1
 class MyMediaRecorder(
     fileDescriptor: FileDescriptor,
     width: Int,
-    height: Int
+    height: Int,
+    private val callback: RecorderCallback
 ) : Encoder.Callback {
+
+    interface RecorderCallback {
+        fun onRecorded(data: ByteArray, presentationTimeUs: Long, type: Encoder.Type)
+    }
 
     private val muxer = MediaMuxer(fileDescriptor, MediaMuxer.OutputFormat.MUXER_OUTPUT_MPEG_4)
 
@@ -24,7 +29,6 @@ class MyMediaRecorder(
 
     private val videoEncoder = VideoEncoder(width, height, this)
     private val audioEncoder = AudioEncoder(this)
-    private val audioDecoder = AACDecoder()
 
     private var isMuxerAvailable = false
     private var trackCount = 0
@@ -46,11 +50,12 @@ class MyMediaRecorder(
     override fun onEncoded(buffer: ByteBuffer, info: MediaCodec.BufferInfo, type: Encoder.Type) {
         if (!isMuxerAvailable) return
         val trackId = trackIds[type.ordinal]
-        if (type == Encoder.Type.Audio) {
-            buffer.position(info.offset).limit(info.offset + info.size)
-            audioDecoder.put(buffer, info.size, info.presentationTimeUs)
-        }
         muxer.writeSampleData(trackId, buffer, info)
+
+        val byteArray = ByteArray(info.size)
+        buffer.position(info.offset).limit(info.offset + info.size)
+        buffer.get(byteArray)
+        callback.onRecorded(byteArray, info.presentationTimeUs, type)
     }
 
     fun prepare() {
@@ -58,25 +63,21 @@ class MyMediaRecorder(
         trackIds.replaceAll { UNINITIALIZED }
         videoEncoder.prepare()
         audioEncoder.prepare()
-        audioDecoder.prepare()
     }
 
     fun start() {
         videoEncoder.start()
         audioEncoder.start()
-        audioDecoder.start()
     }
 
     fun stop() {
         videoEncoder.stop()
         audioEncoder.stop()
-        audioDecoder.stop()
         muxer.stop()
     }
 
     fun release() {
         videoEncoder.release()
         audioEncoder.release()
-        audioDecoder.release()
     }
 }

@@ -1,27 +1,21 @@
 package com.crakac.localparty
 
 import android.Manifest
-import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
-import android.media.projection.MediaProjectionManager
 import android.os.Build
 import android.os.Bundle
-import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
-import com.crakac.localparty.ui.theme.App
-import com.crakac.localparty.ui.theme.MainContent
-import com.crakac.localparty.ui.theme.PermissionRequestContent
-import kotlinx.coroutines.launch
+import com.crakac.localparty.ui.screen.App
+import com.crakac.localparty.ui.screen.MainContent
+import com.crakac.localparty.ui.screen.PermissionRequestContent
 
 class MainActivity : ComponentActivity() {
-    private lateinit var mediaProjectionManager: MediaProjectionManager
 
     private var isPermissionFullyGranted by mutableStateOf(false)
     private lateinit var connectionManager: ConnectionManager
@@ -32,48 +26,23 @@ class MainActivity : ComponentActivity() {
         isPermissionFullyGranted = result.entries.all { it.value }
     }
 
-    private val projectionLauncher = registerForActivityResult(
-        ActivityResultContracts.StartActivityForResult()
-    ) { result ->
-        if (result.resultCode != RESULT_OK || result.data == null) {
-            Toast.makeText(this@MainActivity, "Not permitted", Toast.LENGTH_SHORT)
-                .show()
-            return@registerForActivityResult
-        }
-        startRecordingService(result.data!!)
-    }
-
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        mediaProjectionManager =
-            getSystemService(Context.MEDIA_PROJECTION_SERVICE) as MediaProjectionManager
         connectionManager = ConnectionManager(this, lifecycle)
         setContent {
             App {
-                val scope = rememberCoroutineScope()
                 if (isPermissionFullyGranted) {
                     MainContent(
                         connectionManager.endpoints,
                         onClickEndpoint = { endpoint, state ->
-                            scope.launch {
-                                connectionManager.requestConnection(endpoint, state)
-                            }
+                            connectionManager.requestConnection(endpoint, state)
                         },
                         onClickStart = {
-                            scope.launch {
-                                projectionLauncher.launch(mediaProjectionManager.createScreenCaptureIntent())
-                            }
-                        },
-                        onClickStop = {
-                            scope.launch {
-                                stopRecordingService()
-                                Toast.makeText(
-                                    this@MainActivity,
-                                    "Stop recording",
-                                    Toast.LENGTH_SHORT
+                            startActivity(
+                                Intent(
+                                    this@MainActivity, CaptureActivity::class.java
                                 )
-                                    .show()
-                            }
+                            )
                         },
                     )
                 } else {
@@ -85,15 +54,6 @@ class MainActivity : ComponentActivity() {
                 }
             }
         }
-    }
-
-    private fun startRecordingService(data: Intent) {
-        val intent = ScreenRecordService.createIntent(this, data)
-        startForegroundService(intent)
-    }
-
-    private fun stopRecordingService() {
-        stopService(Intent(this, ScreenRecordService::class.java))
     }
 
     override fun onStart() {
