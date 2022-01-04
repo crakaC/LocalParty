@@ -24,7 +24,12 @@ class MyMediaRecorder(
 
     private val muxer = MediaMuxer(fileDescriptor, MediaMuxer.OutputFormat.MUXER_OUTPUT_MPEG_4)
 
-    val surface: Surface
+    /**
+     * Input surface of video encoder.
+     *
+     * Before using this surface, you must call [prepare()].
+     */
+    val inputSurface: Surface
         get() = videoEncoder.inputSurface
 
     private val videoEncoder = VideoEncoder(width, height, this)
@@ -34,8 +39,8 @@ class MyMediaRecorder(
     private var trackCount = 0
     private val trackIds = MutableList(NUM_TRACKS) { UNINITIALIZED }
 
-    override fun onFormatChanged(format: MediaFormat, type: Encoder.Type) {
-        val index = type.ordinal
+    override fun onFormatChanged(encoder: Encoder, format: MediaFormat) {
+        val index = encoder.type.ordinal
         synchronized(this) {
             if (trackIds[index] != UNINITIALIZED) return
             trackIds[index] = muxer.addTrack(format)
@@ -47,15 +52,15 @@ class MyMediaRecorder(
         }
     }
 
-    override fun onEncoded(buffer: ByteBuffer, info: MediaCodec.BufferInfo, type: Encoder.Type) {
+    override fun onEncoded(encoder: Encoder, buffer: ByteBuffer, info: MediaCodec.BufferInfo) {
         if (!isMuxerAvailable) return
-        val trackId = trackIds[type.ordinal]
+        val trackId = trackIds[encoder.type.ordinal]
         muxer.writeSampleData(trackId, buffer, info)
 
         val byteArray = ByteArray(info.size)
         buffer.position(info.offset).limit(info.offset + info.size)
         buffer.get(byteArray)
-        callback.onRecorded(byteArray, info.presentationTimeUs, type)
+        callback.onRecorded(byteArray, info.presentationTimeUs, encoder.type)
     }
 
     fun prepare() {

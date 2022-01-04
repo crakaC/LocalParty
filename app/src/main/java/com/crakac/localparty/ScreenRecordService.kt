@@ -56,7 +56,7 @@ class ScreenRecordService : Service() {
                 Log.d(TAG, "csd-0 is null")
                 return
             }
-            queue.offer(Chunk(ChunkType.AudioHeader, data.size, 0L, data))
+            queue.offer(Chunk(ChunkType.AudioConfig, data.size, 0L, data))
         }
     }
 
@@ -157,7 +157,7 @@ class ScreenRecordService : Service() {
                 height,
                 metrics.densityDpi,
                 DisplayManager.VIRTUAL_DISPLAY_FLAG_AUTO_MIRROR,
-                recorder!!.surface,
+                recorder!!.inputSurface,
                 null,
                 null
             )
@@ -172,7 +172,7 @@ class ScreenRecordService : Service() {
 
                 override fun onFormatChanged(csd: ByteArray, type: Encoder.Type) {
                     if (type == Encoder.Type.Audio) {
-                        queue.offer(Chunk(ChunkType.AudioHeader, csd.size, 0L, csd))
+                        queue.offer(Chunk(ChunkType.AudioConfig, csd.size, 0L, csd))
                     }
                 }
             })
@@ -183,7 +183,7 @@ class ScreenRecordService : Service() {
                 height,
                 metrics.densityDpi,
                 DisplayManager.VIRTUAL_DISPLAY_FLAG_AUTO_MIRROR,
-                encoder!!.surface,
+                encoder!!.inputSurface,
                 null,
                 null
             )

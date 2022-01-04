@@ -111,9 +111,9 @@ class MediaDecoder(
                     while (isRunning.get() && videoQueue.isEmpty()) {
                         Thread.sleep(10)
                     }
-                    val (data, presentationTimeUs) = videoQueue.poll() ?: return
+                    val (data, presentationTimeUs, flag) = videoQueue.poll() ?: return
                     buffer.put(data, 0, data.size)
-                    codec.queueInputBuffer(index, 0, data.size, presentationTimeUs, 0)
+                    codec.queueInputBuffer(index, 0, data.size, presentationTimeUs, flag)
                 } catch (e: Exception) {
                     Log.w(TAG, e.stackTraceToString())
                 }
@@ -189,8 +189,8 @@ class MediaDecoder(
         videoQueue.offer(Sample(data, presentationTimeUs))
     }
 
-    fun configureAudioCodec(data: ByteArray){
+    fun configureAudioCodec(codecSpecificData: ByteArray){
         if(!isRunning.get()) return
-        audioQueue.offer(Sample(data, 0L, MediaCodec.BUFFER_FLAG_CODEC_CONFIG))
+        audioQueue.offer(Sample(codecSpecificData, 0L, MediaCodec.BUFFER_FLAG_CODEC_CONFIG))
     }
 }

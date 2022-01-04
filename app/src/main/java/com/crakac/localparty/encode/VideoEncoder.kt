@@ -3,7 +3,6 @@ package com.crakac.localparty.encode
 import android.media.MediaCodec
 import android.media.MediaCodecInfo
 import android.media.MediaFormat
-import android.util.Log
 import android.view.Surface
 
 private const val FRAME_RATE = 30
@@ -14,8 +13,8 @@ private const val MIME = MediaFormat.MIMETYPE_VIDEO_AVC
 private const val TAG = "VideoEncoder"
 
 class VideoEncoder(width: Int, height: Int, private val callback: Encoder.Callback) :
-    Encoder, MediaCodec.Callback() {
-    override val encoderType = Encoder.Type.Video
+    Encoder, MediaCodecCallback() {
+    override val type = Encoder.Type.Video
     lateinit var inputSurface: Surface
         private set
 
@@ -35,25 +34,18 @@ class VideoEncoder(width: Int, height: Int, private val callback: Encoder.Callba
         setCallback(this@VideoEncoder)
     }
 
-    override fun onInputBufferAvailable(codec: MediaCodec, index: Int) {
-    }
-
     override fun onOutputBufferAvailable(
         codec: MediaCodec,
         index: Int,
         info: MediaCodec.BufferInfo
     ) {
         val buffer = codec.getOutputBuffer(index) ?: throw RuntimeException("Output buffer is null")
-        callback.onEncoded(buffer, info, encoderType)
+        callback.onEncoded(this, buffer, info)
         codec.releaseOutputBuffer(index, false)
     }
 
-    override fun onError(codec: MediaCodec, e: MediaCodec.CodecException) {
-        Log.e(TAG, e.toString())
-    }
-
     override fun onOutputFormatChanged(codec: MediaCodec, format: MediaFormat) {
-        callback.onFormatChanged(format, encoderType)
+        callback.onFormatChanged(this, format)
     }
 
     override fun prepare() {

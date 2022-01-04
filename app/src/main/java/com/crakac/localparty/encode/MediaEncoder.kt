@@ -19,22 +19,27 @@ class MediaEncoder(
         fun onFormatChanged(csd: ByteArray, type: Encoder.Type)
     }
 
-    val surface: Surface
+    /**
+     * Input surface of video encoder.
+     *
+     * Before using this surface, you must call [prepare()].
+     */
+    val inputSurface: Surface
         get() = videoEncoder.inputSurface
 
     private val videoEncoder = VideoEncoder(width, height, this)
     private val audioEncoder = AudioEncoder(this)
 
-    override fun onFormatChanged(format: MediaFormat, type: Encoder.Type) {
+    override fun onFormatChanged(encoder: Encoder, format: MediaFormat) {
         val csd = format.getByteBuffer("csd-0")?.array() ?: return
-        callback.onFormatChanged(csd, type)
+        callback.onFormatChanged(csd, encoder.type)
     }
 
-    override fun onEncoded(buffer: ByteBuffer, info: MediaCodec.BufferInfo, type: Encoder.Type) {
+    override fun onEncoded(encoder: Encoder, buffer: ByteBuffer, info: MediaCodec.BufferInfo) {
         val byteArray = ByteArray(info.size)
         buffer.position(info.offset).limit(info.offset + info.size)
         buffer.get(byteArray)
-        callback.onEncoded(byteArray, info.presentationTimeUs, type)
+        callback.onEncoded(byteArray, info.presentationTimeUs, encoder.type)
     }
 
     fun prepare() {

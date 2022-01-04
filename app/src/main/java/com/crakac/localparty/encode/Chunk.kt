@@ -1,6 +1,6 @@
 package com.crakac.localparty.encode
 
-enum class ChunkType { Video, Audio, AudioHeader }
+enum class ChunkType { Video, Audio, AudioConfig }
 data class Chunk(
     val type: ChunkType,
     val dataSize: Int,
@@ -18,7 +18,8 @@ data class Chunk(
     companion object {
         /**
          * Size of fields of chunk.
-         * sizeOf(type) + sizeOf(dataSize) + sizeOf(presentationTimeUs) */
+         * sizeOf(type) + sizeOf(dataSize) + sizeOf(presentationTimeUs)
+         */
         private const val FieldSize = Byte.SIZE_BYTES + Int.SIZE_BYTES + Long.SIZE_BYTES
         fun fromByteArray(src: ByteArray, offset: Int, limit: Int): Chunk {
             var index = offset
@@ -56,7 +57,7 @@ data class Chunk(
     }
 
     /**
-     * return appended bytes
+     * @return size of appended bytes
      */
     fun append(src: ByteArray, offset: Int = 0, limit: Int): Int {
         val length = minOf(limit - offset, remain)

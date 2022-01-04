@@ -74,7 +74,7 @@ class CaptureActivity : AppCompatActivity(), SurfaceHolder.Callback {
                                             chunk.presentationTimeUs
                                         )
                                     }
-                                    ChunkType.AudioHeader -> {
+                                    ChunkType.AudioConfig -> {
                                         mediaSync?.configureAudioCodec(chunk.data)
                                     }
                                 }

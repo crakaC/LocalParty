@@ -28,7 +28,7 @@ class AudioEncoder(private val callback: Encoder.Callback) : Encoder {
 
     private val isRunning = AtomicBoolean(false)
 
-    override val encoderType = Encoder.Type.Audio
+    override val type = Encoder.Type.Audio
     private val audioBufferSizeInBytes = AudioRecord.getMinBufferSize(
         SAMPLE_RATE,
         CHANNEL_CONFIG,
@@ -116,7 +116,7 @@ class AudioEncoder(private val callback: Encoder.Callback) : Encoder {
                 val bufferIndex = codec.dequeueOutputBuffer(bufferInfo, 1000L)
                 if (bufferIndex == MediaCodec.INFO_TRY_AGAIN_LATER) return@synchronized
                 if (bufferIndex == MediaCodec.INFO_OUTPUT_FORMAT_CHANGED) {
-                    callback.onFormatChanged(codec.outputFormat, encoderType)
+                    callback.onFormatChanged(this@AudioEncoder, codec.outputFormat)
                     return@synchronized
                 }
 
@@ -130,7 +130,7 @@ class AudioEncoder(private val callback: Encoder.Callback) : Encoder {
                         .position(bufferInfo.offset)
                         .limit(bufferInfo.offset + bufferInfo.size)
                     outputBuffer.get(audioBuffer, 0, bufferInfo.size)
-                    callback.onEncoded(outputBuffer, bufferInfo, encoderType)
+                    callback.onEncoded(this@AudioEncoder, outputBuffer, bufferInfo)
                     codec.releaseOutputBuffer(bufferIndex, false)
                 }
 

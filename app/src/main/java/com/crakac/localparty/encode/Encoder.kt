@@ -7,10 +7,10 @@ import java.nio.ByteBuffer
 interface Encoder : Codec {
     enum class Type { Video, Audio }
 
-    val encoderType: Type
+    val type: Type
 
     interface Callback {
-        fun onFormatChanged(format: MediaFormat, type: Type)
-        fun onEncoded(buffer: ByteBuffer, info: MediaCodec.BufferInfo, type: Type)
+        fun onFormatChanged(encoder: Encoder, format: MediaFormat)
+        fun onEncoded(encoder: Encoder, buffer: ByteBuffer, info: MediaCodec.BufferInfo)
     }
 }
