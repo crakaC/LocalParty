@@ -1,24 +1,29 @@
 package com.crakac.localparty
 
+import android.app.PictureInPictureParams
 import android.content.Context
 import android.content.Intent
+import android.content.res.Configuration
 import android.media.projection.MediaProjectionManager
 import android.os.Bundle
 import android.util.Log
+import android.util.Rational
+import android.view.SurfaceHolder
+import android.view.View
 import android.widget.Toast
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
 import com.crakac.localparty.databinding.ActivityCaptureBinding
 import com.crakac.localparty.encode.Chunk
 import com.crakac.localparty.encode.ChunkType
-import com.crakac.localparty.encode.MediaSync
+import com.crakac.localparty.encode.MediaSyncWrapper
 import java.io.IOException
 import java.net.InetAddress
 import java.net.InetSocketAddress
 import java.net.ServerSocket
 import kotlin.concurrent.thread
 
-class CaptureActivity : AppCompatActivity() {
+class CaptureActivity : AppCompatActivity(), SurfaceHolder.Callback {
 
     companion object {
         private val TAG = CaptureActivity::class.simpleName
@@ -26,7 +31,7 @@ class CaptureActivity : AppCompatActivity() {
 
     private lateinit var binding: ActivityCaptureBinding
     private lateinit var mediaProjectionManager: MediaProjectionManager
-    private lateinit var mediaSync: MediaSync
+    private var mediaSync: MediaSyncWrapper? = null
     private lateinit var serverSocket: ServerSocket
 
     @Volatile
@@ -34,40 +39,51 @@ class CaptureActivity : AppCompatActivity() {
 
     private fun listen() {
         networkThread = thread {
-            val socket = serverSocket.accept()
-            Log.d(TAG, "socket accepted!")
-            Log.d(TAG, "receive buffer size: ${socket.receiveBufferSize}")
-            socket.getInputStream().use { stream ->
-                val buffer = ByteArray(32 * 1024)
-                var chunk: Chunk? = null
-                while (networkThread == Thread.currentThread()) {
-                    try {
-                        val readBytes = stream.read(buffer)
-                        var position = 0
-                        while (position < readBytes) {
-                            if (chunk?.isPartial == true) {
-                                position += chunk.append(buffer, position)
-                            } else {
-                                chunk = Chunk.fromByteArray(buffer, position)
-                                position += chunk.actualSize
-                            }
+            fun isActive() = networkThread == Thread.currentThread()
+            serverSocket.accept().use { socket ->
+                Log.d(TAG, "socket accepted!")
+                Log.d(TAG, "receive buffer size: ${socket.receiveBufferSize}")
+                socket.getInputStream().use { stream ->
+                    val buffer = ByteArray(16 * 1024)
+                    var chunk: Chunk? = null
+                    while (isActive()) {
+                        try {
+                            val readBytes = stream.read(buffer)
+                            var position = 0
+                            while (position < readBytes) {
+                                if (chunk?.isPartial == true) {
+                                    position += chunk.append(buffer, position, readBytes)
+                                } else {
+                                    chunk = Chunk.fromByteArray(buffer, position, readBytes)
+                                    position += chunk.actualSize
+                                }
 
-                            // read next stream
-                            if (chunk.isPartial) break
+                                // read next stream
+                                if (chunk.isPartial) break
 
-                            if (chunk.type == ChunkType.Audio) {
-                                mediaSync.enqueueAudioData(chunk.data, chunk.presentationTimeUs)
-                            } else {
-                                mediaSync.enqueueVideoData(chunk.data, chunk.presentationTimeUs)
+                                if (chunk.type == ChunkType.Audio) {
+                                    mediaSync?.enqueueAudioData(
+                                        chunk.data,
+                                        chunk.presentationTimeUs
+                                    )
+                                } else {
+                                    mediaSync?.enqueueVideoData(
+                                        chunk.data,
+                                        chunk.presentationTimeUs
+                                    )
+                                }
+                                chunk = null
                             }
+                        } catch (e: IOException) {
+                            Log.e(TAG, e.stackTraceToString())
                         }
-                    } catch (e: IOException) {
-                        Log.e(TAG, e.stackTraceToString())
                     }
                 }
             }
-            socket.close()
-            serverSocket.close()
+            runCatching {
+                serverSocket.close()
+            }
+            Log.d(TAG, "network thread stopped")
         }
     }
 
@@ -80,20 +96,37 @@ class CaptureActivity : AppCompatActivity() {
             finish()
             return@registerForActivityResult
         }
-        mediaSync =
-            MediaSync(binding.surface.holder.surface, binding.surface.width, binding.surface.height)
-        mediaSync.start()
+        mediaSync = MediaSyncWrapper(
+            binding.surface.holder.surface,
+            binding.surface.width,
+            binding.surface.height
+        ).also {
+            it.start()
+        }
 
         serverSocket = ServerSocket()
-            .also {
-                it.reuseAddress = true
-            }
         serverSocket.bind(InetSocketAddress(InetAddress.getLoopbackAddress(), 0))
         val address = serverSocket.inetAddress
         val port = serverSocket.localPort
         listen()
 
         startRecordingService(result.data!!, address, port)
+        enterPictureInPictureMode(createPictureInPictureParams())
+    }
+
+    override fun onPictureInPictureModeChanged(
+        isInPictureInPictureMode: Boolean,
+        newConfig: Configuration?
+    ) {
+        if (isInPictureInPictureMode) {
+            binding.stopButton.visibility = View.GONE
+        } else {
+            binding.stopButton.visibility = View.VISIBLE
+        }
+    }
+
+    override fun onUserLeaveHint() {
+        enterPictureInPictureMode(createPictureInPictureParams())
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -103,18 +136,17 @@ class CaptureActivity : AppCompatActivity() {
 
         binding = ActivityCaptureBinding.inflate(layoutInflater)
         binding.stopButton.setOnClickListener {
-            stopRecordingService()
+            stopRecording()
             finish()
         }
+        binding.surface.holder.addCallback(this)
         setContentView(binding.root)
         projectionLauncher.launch(mediaProjectionManager.createScreenCaptureIntent())
     }
 
     override fun onDestroy() {
         super.onDestroy()
-        mediaSync.stop()
-        mediaSync.release()
-        networkThread = null
+        stopRecording()
     }
 
     private fun startRecordingService(data: Intent, address: InetAddress, port: Int) {
@@ -122,8 +154,36 @@ class CaptureActivity : AppCompatActivity() {
         startForegroundService(intent)
     }
 
-    private fun stopRecordingService() {
+    private fun stopRecording() {
+        mediaSync?.stop()
+        mediaSync?.release()
+        mediaSync = null
         networkThread = null
+
         stopService(Intent(this, ScreenRecordService::class.java))
+    }
+
+    private fun createPictureInPictureParams(): PictureInPictureParams {
+        return PictureInPictureParams.Builder()
+            .setAspectRatio(
+                Rational(
+                    resources.displayMetrics.widthPixels,
+                    resources.displayMetrics.heightPixels
+                )
+            )
+            .build()
+    }
+
+    override fun surfaceCreated(holder: SurfaceHolder) {
+        Log.d(TAG, "surfaceCreated")
+    }
+
+    override fun surfaceChanged(holder: SurfaceHolder, format: Int, width: Int, height: Int) {
+        Log.d(TAG, "surfaceChanged")
+    }
+
+    override fun surfaceDestroyed(holder: SurfaceHolder) {
+        Log.d(TAG, "surfaceDestroyed")
+        stopRecording()
     }
 }

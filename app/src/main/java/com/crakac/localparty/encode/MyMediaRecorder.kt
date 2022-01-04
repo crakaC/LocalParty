@@ -18,7 +18,7 @@ class MyMediaRecorder(
     private val callback: RecorderCallback
 ) : Encoder.Callback {
 
-    interface RecorderCallback {
+    fun interface RecorderCallback {
         fun onRecorded(data: ByteArray, presentationTimeUs: Long, type: Encoder.Type)
     }
 

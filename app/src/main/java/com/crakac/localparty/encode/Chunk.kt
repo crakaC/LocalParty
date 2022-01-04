@@ -1,14 +1,14 @@
 package com.crakac.localparty.encode
 
-enum class ChunkType { Video, Audio }
+enum class ChunkType { Video, Audio, AudioHeader }
 data class Chunk(
     val type: ChunkType,
     val dataSize: Int,
     val presentationTimeUs: Long,
     val data: ByteArray,
 ) {
-    var isPartial: Boolean = false
-        private set
+    val isPartial: Boolean
+        get() = remain != 0
     var remain: Int = 0
         private set
 
@@ -20,9 +20,10 @@ data class Chunk(
          * Size of fields of chunk.
          * sizeOf(type) + sizeOf(dataSize) + sizeOf(presentationTimeUs) */
         private const val FieldSize = Byte.SIZE_BYTES + Int.SIZE_BYTES + Long.SIZE_BYTES
-        fun fromByteArray(src: ByteArray, offset: Int): Chunk {
+        fun fromByteArray(src: ByteArray, offset: Int, limit: Int): Chunk {
             var index = offset
-            val type = ChunkType.values()[src[index++].toInt()]
+            val type = ChunkType.values()[src[index].toInt()]
+            index += Byte.SIZE_BYTES
 
             val dataSize = src.sliceArray(index until index + Int.SIZE_BYTES).toInt()
             index += Int.SIZE_BYTES
@@ -31,12 +32,11 @@ data class Chunk(
             index += Long.SIZE_BYTES
 
             val data = ByteArray(dataSize)
-            val length = minOf(src.size - index, dataSize)
+            val length = minOf(limit - index, dataSize)
             System.arraycopy(src, index, data, 0, length)
 
             val remain = dataSize - length
             val chunk = Chunk(type, dataSize, presentationTimeUs, data)
-            chunk.isPartial = remain != 0
             chunk.remain = remain
             return chunk
         }
@@ -58,13 +58,10 @@ data class Chunk(
     /**
      * return appended bytes
      */
-    fun append(src: ByteArray, offset: Int = 0): Int {
-        val length = minOf(src.size, remain)
+    fun append(src: ByteArray, offset: Int = 0, limit: Int): Int {
+        val length = minOf(limit - offset, remain)
         System.arraycopy(src, offset, data, data.size - remain, length)
         remain -= length
-        if (remain == 0) {
-            isPartial = false
-        }
         return length
     }
 

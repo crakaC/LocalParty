@@ -5,17 +5,19 @@ import android.media.*
 import android.media.audiofx.AcousticEchoCanceler
 import android.util.Log
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.cancel
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
+import java.util.concurrent.atomic.AtomicBoolean
 
 private const val NANOS_PER_SECOND = 1_000_000_000L
 private const val NANOS_PER_MICROS = 1_000L
 private const val MIME_TYPE_AAC = MediaFormat.MIMETYPE_AUDIO_AAC
-private const val CHANNEL_CONFIG = AudioFormat.CHANNEL_IN_MONO
-private const val CHANNEL_COUNT = 1
+private const val CHANNEL_CONFIG = AudioFormat.CHANNEL_IN_STEREO
+private const val CHANNEL_COUNT = 2
 private const val BYTES_PER_FRAME = 2 * CHANNEL_COUNT
 private const val SAMPLE_RATE = 44_100
-private const val BIT_RATE = 64 * 1024 // 64kbps
+private const val BIT_RATE = CHANNEL_COUNT * 64 * 1024 // 64kbps per channel
 private const val TAG = "AudioEncoder"
 
 class AudioEncoder(private val callback: Encoder.Callback) : Encoder {
@@ -23,6 +25,8 @@ class AudioEncoder(private val callback: Encoder.Callback) : Encoder {
     private val writeScope = createSingleThreadScope("write")
     private var readJob: Job? = null
     private var writeJob: Job? = null
+
+    private val isRunning = AtomicBoolean(false)
 
     override val encoderType = Encoder.Type.Audio
     private val audioBufferSizeInBytes = AudioRecord.getMinBufferSize(
@@ -77,6 +81,8 @@ class AudioEncoder(private val callback: Encoder.Callback) : Encoder {
         audioRecord.startRecording()
         codec.start()
 
+        isRunning.set(true)
+
         readJob?.cancel()
         readJob = read()
 
@@ -86,61 +92,76 @@ class AudioEncoder(private val callback: Encoder.Callback) : Encoder {
 
     private fun read() = readScope.launch {
         var totalNumFramesRead = 0L
-        while (isActive) {
-            val readBytes = audioRecord.read(audioBuffer, 0, audioBufferSizeInBytes)
-            val bufferIndex = codec.dequeueInputBuffer(-1)
-
-            val inputBuffer =
-                codec.getInputBuffer(bufferIndex) ?: throw RuntimeException("Input buffer is null")
-            inputBuffer.clear()
-            inputBuffer.put(audioBuffer)
-            codec.queueInputBuffer(
-                bufferIndex, 0, readBytes, getTimestamp(totalNumFramesRead), 0
-            )
-            totalNumFramesRead += readBytes / BYTES_PER_FRAME
+        while (isActive && isRunning.get()) {
+            synchronized(readScope) {
+                val readBytes = audioRecord.read(audioBuffer, 0, audioBufferSizeInBytes)
+                val bufferIndex = codec.dequeueInputBuffer(1000L)
+                if (bufferIndex == MediaCodec.INFO_TRY_AGAIN_LATER) return@synchronized
+                val inputBuffer = codec.getInputBufferOrThrow(bufferIndex)
+                inputBuffer.clear()
+                inputBuffer.put(audioBuffer)
+                codec.queueInputBuffer(
+                    bufferIndex, 0, readBytes, getTimestamp(totalNumFramesRead), 0
+                )
+                totalNumFramesRead += readBytes / BYTES_PER_FRAME
+            }
         }
     }
 
     private fun write() = writeScope.launch {
         val bufferInfo = MediaCodec.BufferInfo()
-        while (isActive) {
-            val bufferIndex = codec.dequeueOutputBuffer(bufferInfo, 1000L)
-            if (bufferIndex == MediaCodec.INFO_TRY_AGAIN_LATER) continue
-            if (bufferIndex == MediaCodec.INFO_OUTPUT_FORMAT_CHANGED) {
-                callback.onFormatChanged(codec.outputFormat, encoderType)
-                continue
-            }
+        while (isActive && isRunning.get()) {
+            synchronized(writeScope) {
+                val bufferIndex = codec.dequeueOutputBuffer(bufferInfo, 1000L)
+                if (bufferIndex == MediaCodec.INFO_TRY_AGAIN_LATER) return@synchronized
+                if (bufferIndex == MediaCodec.INFO_OUTPUT_FORMAT_CHANGED) {
+                    callback.onFormatChanged(codec.outputFormat, encoderType)
+                    return@synchronized
+                }
 
-            if (bufferInfo.flags and MediaCodec.BUFFER_FLAG_CODEC_CONFIG != 0) {
-                bufferInfo.size = 0
-            }
+                if (bufferInfo.flags and MediaCodec.BUFFER_FLAG_CODEC_CONFIG != 0) {
+                    bufferInfo.size = 0
+                }
 
-            if (bufferInfo.size > 0) {
-                val outputBuffer =
-                    codec.getOutputBuffer(bufferIndex)
-                        ?: throw RuntimeException("Output buffer is null")
-                outputBuffer
-                    .position(bufferInfo.offset)
-                    .limit(bufferInfo.offset + bufferInfo.size)
-                outputBuffer.get(audioBuffer, 0, bufferInfo.size)
-                callback.onEncoded(outputBuffer, bufferInfo, encoderType)
-                codec.releaseOutputBuffer(bufferIndex, false)
-            }
+                if (bufferInfo.size > 0) {
+                    val outputBuffer = codec.getOutputBufferOrThrow(bufferIndex)
+                    outputBuffer
+                        .position(bufferInfo.offset)
+                        .limit(bufferInfo.offset + bufferInfo.size)
+                    outputBuffer.get(audioBuffer, 0, bufferInfo.size)
+                    callback.onEncoded(outputBuffer, bufferInfo, encoderType)
+                    codec.releaseOutputBuffer(bufferIndex, false)
+                }
 
-            if (bufferInfo.flags and MediaCodec.BUFFER_FLAG_END_OF_STREAM != 0) {
-                Log.d(TAG, "End of stream.")
-                break
+                if (bufferInfo.flags and MediaCodec.BUFFER_FLAG_END_OF_STREAM != 0) {
+                    Log.d(TAG, "End of stream.")
+                    return@launch
+                }
             }
         }
     }
 
     override fun stop() {
+        isRunning.set(false)
+
+        readJob?.cancel()
+        readJob = null
+        writeJob?.cancel()
+        writeJob = null
+
         audioRecord.stop()
-        codec.stop()
+
+        synchronized(readScope) {
+            synchronized(writeScope) {
+                codec.stop()
+            }
+        }
     }
 
     override fun release() {
         audioRecord.release()
         codec.release()
+        readScope.cancel()
+        writeScope.cancel()
     }
 }

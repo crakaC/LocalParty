@@ -17,10 +17,7 @@ import android.os.IBinder
 import android.provider.MediaStore
 import android.util.Log
 import androidx.core.content.FileProvider
-import com.crakac.localparty.encode.Chunk
-import com.crakac.localparty.encode.ChunkType
-import com.crakac.localparty.encode.Encoder
-import com.crakac.localparty.encode.MyMediaRecorder
+import com.crakac.localparty.encode.*
 import java.io.File
 import java.io.IOException
 import java.net.InetAddress
@@ -31,46 +28,48 @@ import java.util.concurrent.LinkedBlockingDeque
 import kotlin.concurrent.thread
 import kotlin.math.roundToInt
 
-class ScreenRecordService : MyMediaRecorder.RecorderCallback, Service() {
+class ScreenRecordService : Service() {
     private lateinit var virtualDisplay: VirtualDisplay
-    private lateinit var recorder: MyMediaRecorder
+    private var encoder: MediaEncoder? = null
+    private var recorder: MyMediaRecorder? = null
     private lateinit var projection: MediaProjection
     private lateinit var contentUri: Uri
 
-    private lateinit var socket: Socket
+    private var shouldSaveRecord: Boolean = false
+
+    @Volatile
     private var networkThread: Thread? = null
 
     private val queue = LinkedBlockingDeque<Chunk>()
-
-    private fun connect(address: InetAddress, port: Int) {
-        networkThread = thread {
-            socket = Socket(address, port)
-            socket.tcpNoDelay = true
-            socket.getOutputStream().use { stream ->
-                while (networkThread == Thread.currentThread()) {
-                    if (queue.isEmpty()) {
-                        Thread.sleep(10)
-                        continue
-                    }
-                    try {
-                        val data = queue.poll() ?: continue
-                        stream.write(data.toByteArray())
-                    } catch (e: IOException) {
-                        Log.w(TAG, e.stackTraceToString())
-                        break
-                    }
-                }
-            }
-            socket.close()
-        }
-    }
-
-    override fun onRecorded(data: ByteArray, presentationTimeUs: Long, type: Encoder.Type) {
+    private val onEncoded = fun(data: ByteArray, presentationTimeUs: Long, type: Encoder.Type) {
         val chunkType = when (type) {
             Encoder.Type.Video -> ChunkType.Video
             Encoder.Type.Audio -> ChunkType.Audio
         }
         queue.offer(Chunk(chunkType, data.size, presentationTimeUs, data))
+    }
+
+    private fun connect(address: InetAddress, port: Int) {
+        networkThread = thread {
+            Socket(address, port).use { socket ->
+                socket.tcpNoDelay = true
+                socket.getOutputStream().use { stream ->
+                    while (networkThread == Thread.currentThread()) {
+                        if (queue.isEmpty()) {
+                            Thread.sleep(1)
+                            continue
+                        }
+                        try {
+                            val data = queue.poll() ?: continue
+                            stream.write(data.toByteArray())
+                        } catch (e: IOException) {
+                            Log.d(TAG, e.stackTraceToString())
+                            break
+                        }
+                    }
+                }
+            }
+        }
     }
 
     override fun onBind(intent: Intent?): IBinder? {
@@ -81,13 +80,23 @@ class ScreenRecordService : MyMediaRecorder.RecorderCallback, Service() {
         if (intent == null) {
             throw IllegalArgumentException("intent is null")
         }
+
         val data = intent.getParcelableExtra<Intent>(KEY_DATA)
             ?: throw IllegalArgumentException("data is not set")
+
+        shouldSaveRecord = intent.getBooleanExtra(KEY_SAVE_RECORD, false)
+
         val address = intent.getSerializableExtra(KEY_ADDRESS) as InetAddress
         val port = intent.getIntExtra(KEY_PORT, 0)
-
         connect(address, port)
 
+        val notification = createNotification()
+        startForeground(NOTIFICATION_ID, notification)
+        startCapture(data)
+        return START_NOT_STICKY
+    }
+
+    private fun createNotification(): Notification {
         val notificationManager =
             getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
 
@@ -98,23 +107,20 @@ class ScreenRecordService : MyMediaRecorder.RecorderCallback, Service() {
             notificationManager.createNotificationChannel(channel)
         }
 
-        val notification = Notification.Builder(applicationContext, CHANNEL_ID)
+        return Notification.Builder(applicationContext, CHANNEL_ID)
             .setContentTitle("LocalParty")
             .setContentText("Tap to stop recording.")
             .setSmallIcon(R.drawable.ic_cast)
             .setContentIntent(pendingIntent(applicationContext))
             .build()
-        startForeground(NOTIFICATION_ID, notification)
-        startRecording(data)
-        return START_NOT_STICKY
     }
 
     override fun onDestroy() {
         super.onDestroy()
-        stopRecording()
+        stopCapture()
     }
 
-    private fun startRecording(data: Intent) {
+    private fun startCapture(data: Intent) {
         val projectionManager =
             getSystemService(Context.MEDIA_PROJECTION_SERVICE) as MediaProjectionManager
         projection = projectionManager.getMediaProjection(RESULT_OK, data)
@@ -129,31 +135,49 @@ class ScreenRecordService : MyMediaRecorder.RecorderCallback, Service() {
         val width = (scale * rawWidth).roundToInt() / 2 * 2
         val height = (scale * rawHeight).roundToInt() / 2 * 2
 
-        contentUri = createContentUri()
-        val fd = contentResolver.openFileDescriptor(contentUri, "w")!!.fileDescriptor
-        recorder = MyMediaRecorder(fd, width, height, this)
-        recorder.prepare()
-        virtualDisplay = projection.createVirtualDisplay(
-            "LocalParty",
-            width,
-            height,
-            metrics.densityDpi,
-            DisplayManager.VIRTUAL_DISPLAY_FLAG_AUTO_MIRROR,
-            recorder.surface,
-            null,
-            null
-        )
-        recorder.start()
+        if (shouldSaveRecord) {
+            contentUri = createContentUri()
+            val fd = contentResolver.openFileDescriptor(contentUri, "w")!!.fileDescriptor
+            recorder = MyMediaRecorder(fd, width, height, onEncoded)
+            recorder!!.prepare()
+            virtualDisplay = projection.createVirtualDisplay(
+                "LocalParty",
+                width,
+                height,
+                metrics.densityDpi,
+                DisplayManager.VIRTUAL_DISPLAY_FLAG_AUTO_MIRROR,
+                recorder!!.surface,
+                null,
+                null
+            )
+            recorder!!.start()
+        } else {
+            encoder = MediaEncoder(width, height, onEncoded)
+            encoder!!.prepare()
+            virtualDisplay = projection.createVirtualDisplay(
+                "LocalParty",
+                width,
+                height,
+                metrics.densityDpi,
+                DisplayManager.VIRTUAL_DISPLAY_FLAG_AUTO_MIRROR,
+                encoder!!.surface,
+                null,
+                null
+            )
+            encoder!!.start()
+        }
     }
 
-    private fun stopRecording() {
-        recorder.stop()
-        recorder.release()
+    private fun stopCapture() {
+        encoder?.stop()
+        encoder?.release()
+        recorder?.stop()
+        recorder?.release()
         projection.stop()
         virtualDisplay.release()
         networkThread = null
 
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+        if (shouldSaveRecord && Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
             val values = ContentValues().apply {
                 put(MediaStore.Video.Media.IS_PENDING, 0)
             }
@@ -191,13 +215,21 @@ class ScreenRecordService : MyMediaRecorder.RecorderCallback, Service() {
         private const val KEY_DATA = "data"
         private const val KEY_ADDRESS = "address"
         private const val KEY_PORT = "port"
+        private const val KEY_SAVE_RECORD = "save_record"
         private const val CHANNEL_ID = "LocalParty"
         private const val NOTIFICATION_ID = 1
-        fun createIntent(context: Context, data: Intent, address: InetAddress, port: Int): Intent {
+        fun createIntent(
+            context: Context,
+            data: Intent,
+            address: InetAddress,
+            port: Int,
+            save: Boolean = false
+        ): Intent {
             return Intent(context, ScreenRecordService::class.java)
                 .putExtra(KEY_DATA, data)
                 .putExtra(KEY_ADDRESS, address)
                 .putExtra(KEY_PORT, port)
+                .putExtra(KEY_SAVE_RECORD, save)
         }
 
         fun pendingIntent(context: Context): PendingIntent {

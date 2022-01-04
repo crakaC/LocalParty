@@ -39,9 +39,7 @@ class MainActivity : ComponentActivity() {
                         },
                         onClickStart = {
                             startActivity(
-                                Intent(
-                                    this@MainActivity, CaptureActivity::class.java
-                                )
+                                Intent(this@MainActivity, CaptureActivity::class.java)
                             )
                         },
                     )
@@ -73,6 +71,7 @@ class MainActivity : ComponentActivity() {
         private val PERMISSIONS = buildList {
             add(Manifest.permission.ACCESS_FINE_LOCATION)
             add(Manifest.permission.RECORD_AUDIO)
+            add(Manifest.permission.NFC)
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
                 add(Manifest.permission.BLUETOOTH_SCAN)
                 add(Manifest.permission.BLUETOOTH_CONNECT)
