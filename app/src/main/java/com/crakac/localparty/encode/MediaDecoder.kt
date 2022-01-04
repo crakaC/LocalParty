@@ -9,13 +9,13 @@ import java.nio.ByteBuffer
 import java.util.concurrent.LinkedBlockingDeque
 import java.util.concurrent.atomic.AtomicBoolean
 
-class MediaSyncWrapper(
+class MediaDecoder(
     outputSurface: Surface,
     width: Int,
     height: Int
 ) {
     companion object {
-        private val TAG = MediaSyncWrapper::class.java.simpleName
+        private val TAG = MediaDecoder::class.java.simpleName
         private const val SAMPLE_RATE = 44_100
         private const val CHANNEL_COUNT = 2
     }
@@ -34,12 +34,12 @@ class MediaSyncWrapper(
     }
 
     private val handlerThread = HandlerThread("MediaSyncHandler").apply { start() }
-    private val sync = MediaSync().apply {
+    private val mediaSync = MediaSync().apply {
         setSurface(outputSurface)
         setCallback(mediaSyncCallback, Handler(handlerThread.looper))
     }
 
-    private val syncSurface = sync.createInputSurface()
+    private val syncSurface = mediaSync.createInputSurface()
 
     private val audioTrack = AudioTrack.Builder()
         .setAudioAttributes(
@@ -62,7 +62,7 @@ class MediaSyncWrapper(
 
     private val audioHandlerThread = HandlerThread("AudioDecoder").apply { start() }
     private val audioCallback: MediaCodec.Callback =
-        object : DefaultMediaCodecCallback("AudioDecoderCallback") {
+        object : MediaCodecCallback("AudioDecoderCallback") {
             override fun onInputBufferAvailable(codec: MediaCodec, index: Int) {
                 try {
                     if (!isRunning.get()) return
@@ -70,9 +70,9 @@ class MediaSyncWrapper(
                     while (isRunning.get() && audioQueue.isEmpty()) {
                         Thread.sleep(10)
                     }
-                    val (data, presentationTimeUs) = audioQueue.poll() ?: return
+                    val (data, presentationTimeUs, flag) = audioQueue.poll() ?: return
                     buffer.put(data, 0, data.size)
-                    codec.queueInputBuffer(index, 0, data.size, presentationTimeUs, 0)
+                    codec.queueInputBuffer(index, 0, data.size, presentationTimeUs, flag)
                 } catch (e: Exception) {
                     Log.w(TAG, e.stackTraceToString())
                 }
@@ -85,8 +85,8 @@ class MediaSyncWrapper(
                     return
                 }
                 try {
-                    val audioBuffer: ByteBuffer = codec.getOutputBufferOrThrow(index)
-                    sync.queueAudio(audioBuffer, index, info.presentationTimeUs)
+                    val audioBuffer: ByteBuffer = codec.getOutputBuffer(index) ?: return
+                    mediaSync.queueAudio(audioBuffer, index, info.presentationTimeUs)
                     // audioBuffer will be released at MediaSync.Callback#onAudioBufferConsumed()
                     // Need not to call codec.releaseOutputBuffer() here.
                 } catch (e: Exception) {
@@ -100,20 +100,10 @@ class MediaSyncWrapper(
         }
     private val audioFormat =
         MediaFormat.createAudioFormat(MediaFormat.MIMETYPE_AUDIO_AAC, SAMPLE_RATE, CHANNEL_COUNT)
-            .apply {
-                setByteBuffer(
-                    "csd-0",
-                    CSD.create(
-                        MediaCodecInfo.CodecProfileLevel.AACObjectLC,
-                        CSD.Sample44100,
-                        CSD.ChannelStereo
-                    )
-                )
-            }
 
     private val videoHandlerThread = HandlerThread("VideoDecoder").apply { start() }
     private val videoCallback: MediaCodec.Callback =
-        object : DefaultMediaCodecCallback("VideoDecoderCallback") {
+        object : MediaCodecCallback("VideoDecoderCallback") {
             override fun onInputBufferAvailable(codec: MediaCodec, index: Int) {
                 if (!isRunning.get()) return
                 try {
@@ -157,7 +147,7 @@ class MediaSyncWrapper(
     private val handlerThreads = arrayOf(handlerThread, audioHandlerThread, videoHandlerThread)
 
     init {
-        sync.setAudioTrack(audioTrack)
+        mediaSync.setAudioTrack(audioTrack)
         audioDecoder.configure(audioFormat, null, null, 0)
         videoDecoder.configure(videoFormat, syncSurface, null, 0)
         videoDecoder.setVideoScalingMode(MediaCodec.VIDEO_SCALING_MODE_SCALE_TO_FIT_WITH_CROPPING)
@@ -165,7 +155,7 @@ class MediaSyncWrapper(
 
     fun start() {
         isRunning.set(true)
-        sync.playbackParams = PlaybackParams().setSpeed(1f)
+        mediaSync.playbackParams = PlaybackParams().setSpeed(1f)
         audioDecoder.start()
         videoDecoder.start()
     }
@@ -173,7 +163,7 @@ class MediaSyncWrapper(
     fun stop() {
         Log.d(TAG, "stop()")
         isRunning.set(false)
-        sync.flush()
+        mediaSync.flush()
         audioQueue.clear()
         videoQueue.clear()
         audioDecoder.stop()
@@ -182,7 +172,7 @@ class MediaSyncWrapper(
 
     fun release() {
         Log.d(TAG, "release()")
-        sync.release()
+        mediaSync.release()
         audioDecoder.release()
         videoDecoder.release()
         audioTrack.release()
@@ -197,5 +187,10 @@ class MediaSyncWrapper(
     fun enqueueVideoData(data: ByteArray, presentationTimeUs: Long) {
         if (!isRunning.get()) return
         videoQueue.offer(Sample(data, presentationTimeUs))
+    }
+
+    fun configureAudioCodec(data: ByteArray){
+        if(!isRunning.get()) return
+        audioQueue.offer(Sample(data, 0L, MediaCodec.BUFFER_FLAG_CODEC_CONFIG))
     }
 }

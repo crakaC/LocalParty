@@ -77,16 +77,17 @@ class AudioEncoder(private val callback: Encoder.Callback) : Encoder {
     }
 
     override fun start() {
+        if(isRunning.get()){
+            Log.d(TAG, "already started")
+            return
+        }
+        isRunning.set(true)
+
         echoCanceler?.enabled = true
         audioRecord.startRecording()
         codec.start()
 
-        isRunning.set(true)
-
-        readJob?.cancel()
         readJob = read()
-
-        writeJob?.cancel()
         writeJob = write()
     }
 
@@ -97,7 +98,7 @@ class AudioEncoder(private val callback: Encoder.Callback) : Encoder {
                 val readBytes = audioRecord.read(audioBuffer, 0, audioBufferSizeInBytes)
                 val bufferIndex = codec.dequeueInputBuffer(1000L)
                 if (bufferIndex == MediaCodec.INFO_TRY_AGAIN_LATER) return@synchronized
-                val inputBuffer = codec.getInputBufferOrThrow(bufferIndex)
+                val inputBuffer = codec.getInputBuffer(bufferIndex) ?: return@synchronized
                 inputBuffer.clear()
                 inputBuffer.put(audioBuffer)
                 codec.queueInputBuffer(
@@ -124,7 +125,7 @@ class AudioEncoder(private val callback: Encoder.Callback) : Encoder {
                 }
 
                 if (bufferInfo.size > 0) {
-                    val outputBuffer = codec.getOutputBufferOrThrow(bufferIndex)
+                    val outputBuffer = codec.getOutputBuffer(bufferIndex) ?:return@synchronized
                     outputBuffer
                         .position(bufferInfo.offset)
                         .limit(bufferInfo.offset + bufferInfo.size)
@@ -142,6 +143,10 @@ class AudioEncoder(private val callback: Encoder.Callback) : Encoder {
     }
 
     override fun stop() {
+        if(!isRunning.get()){
+            Log.d(TAG, "not running")
+            return
+        }
         isRunning.set(false)
 
         readJob?.cancel()

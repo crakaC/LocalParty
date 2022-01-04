@@ -16,7 +16,7 @@ import androidx.appcompat.app.AppCompatActivity
 import com.crakac.localparty.databinding.ActivityCaptureBinding
 import com.crakac.localparty.encode.Chunk
 import com.crakac.localparty.encode.ChunkType
-import com.crakac.localparty.encode.MediaSyncWrapper
+import com.crakac.localparty.encode.MediaDecoder
 import java.io.IOException
 import java.net.InetAddress
 import java.net.InetSocketAddress
@@ -31,7 +31,7 @@ class CaptureActivity : AppCompatActivity(), SurfaceHolder.Callback {
 
     private lateinit var binding: ActivityCaptureBinding
     private lateinit var mediaProjectionManager: MediaProjectionManager
-    private var mediaSync: MediaSyncWrapper? = null
+    private var mediaSync: MediaDecoder? = null
     private lateinit var serverSocket: ServerSocket
 
     @Volatile
@@ -61,16 +61,22 @@ class CaptureActivity : AppCompatActivity(), SurfaceHolder.Callback {
                                 // read next stream
                                 if (chunk.isPartial) break
 
-                                if (chunk.type == ChunkType.Audio) {
-                                    mediaSync?.enqueueAudioData(
-                                        chunk.data,
-                                        chunk.presentationTimeUs
-                                    )
-                                } else {
-                                    mediaSync?.enqueueVideoData(
-                                        chunk.data,
-                                        chunk.presentationTimeUs
-                                    )
+                                when (chunk.type) {
+                                    ChunkType.Video -> {
+                                        mediaSync?.enqueueVideoData(
+                                            chunk.data,
+                                            chunk.presentationTimeUs
+                                        )
+                                    }
+                                    ChunkType.Audio -> {
+                                        mediaSync?.enqueueAudioData(
+                                            chunk.data,
+                                            chunk.presentationTimeUs
+                                        )
+                                    }
+                                    ChunkType.AudioHeader -> {
+                                        mediaSync?.configureAudioCodec(chunk.data)
+                                    }
                                 }
                                 chunk = null
                             }
@@ -96,7 +102,7 @@ class CaptureActivity : AppCompatActivity(), SurfaceHolder.Callback {
             finish()
             return@registerForActivityResult
         }
-        mediaSync = MediaSyncWrapper(
+        mediaSync = MediaDecoder(
             binding.surface.holder.surface,
             binding.surface.width,
             binding.surface.height

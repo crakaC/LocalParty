@@ -8,6 +8,7 @@ import android.content.Context
 import android.content.Intent
 import android.hardware.display.DisplayManager
 import android.hardware.display.VirtualDisplay
+import android.media.MediaFormat
 import android.media.projection.MediaProjection
 import android.media.projection.MediaProjectionManager
 import android.net.Uri
@@ -47,6 +48,16 @@ class ScreenRecordService : Service() {
             Encoder.Type.Audio -> ChunkType.Audio
         }
         queue.offer(Chunk(chunkType, data.size, presentationTimeUs, data))
+    }
+    private val onFormatChanged = fun(format: MediaFormat, type: Encoder.Type) {
+        if (type == Encoder.Type.Audio) {
+            val data = format.getByteBuffer("csd-0")?.array()
+            if (data == null) {
+                Log.d(TAG, "csd-0 is null")
+                return
+            }
+            queue.offer(Chunk(ChunkType.AudioHeader, data.size, 0L, data))
+        }
     }
 
     private fun connect(address: InetAddress, port: Int) {
@@ -152,7 +163,19 @@ class ScreenRecordService : Service() {
             )
             recorder!!.start()
         } else {
-            encoder = MediaEncoder(width, height, onEncoded)
+            encoder = MediaEncoder(width, height, object : MediaEncoder.MediaEncoderCallback {
+                override fun onEncoded(
+                    data: ByteArray,
+                    presentationTimeUs: Long,
+                    type: Encoder.Type
+                ) = this@ScreenRecordService.onEncoded(data, presentationTimeUs, type)
+
+                override fun onFormatChanged(csd: ByteArray, type: Encoder.Type) {
+                    if (type == Encoder.Type.Audio) {
+                        queue.offer(Chunk(ChunkType.AudioHeader, csd.size, 0L, csd))
+                    }
+                }
+            })
             encoder!!.prepare()
             virtualDisplay = projection.createVirtualDisplay(
                 "LocalParty",
