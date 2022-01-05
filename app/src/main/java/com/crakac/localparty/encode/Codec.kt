@@ -1,7 +1,7 @@
 package com.crakac.localparty.encode
 
 interface Codec {
-    fun prepare()
+    fun configure()
     fun start()
     fun stop()
     fun release()

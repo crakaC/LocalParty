@@ -28,23 +28,23 @@ class MediaEncoder(
         get() = videoEncoder.inputSurface
 
     private val videoEncoder = VideoEncoder(width, height, this)
-    private val audioEncoder = AudioEncoder(this)
+    private val audioEncoder = AsyncAudioEncoder(this)
 
-    override fun onFormatChanged(encoder: Encoder, format: MediaFormat) {
+    override fun onFormatChanged(format: MediaFormat, type: Encoder.Type) {
         val csd = format.getByteBuffer("csd-0")?.array() ?: return
-        callback.onFormatChanged(csd, encoder.type)
+        callback.onFormatChanged(csd, type)
     }
 
-    override fun onEncoded(encoder: Encoder, buffer: ByteBuffer, info: MediaCodec.BufferInfo) {
+    override fun onEncoded(buffer: ByteBuffer, info: MediaCodec.BufferInfo, type: Encoder.Type) {
         val byteArray = ByteArray(info.size)
         buffer.position(info.offset).limit(info.offset + info.size)
         buffer.get(byteArray)
-        callback.onEncoded(byteArray, info.presentationTimeUs, encoder.type)
+        callback.onEncoded(byteArray, info.presentationTimeUs, type)
     }
 
     fun prepare() {
-        videoEncoder.prepare()
-        audioEncoder.prepare()
+        videoEncoder.configure()
+        audioEncoder.configure()
     }
 
     fun start() {

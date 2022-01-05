@@ -10,7 +10,7 @@ interface Encoder : Codec {
     val type: Type
 
     interface Callback {
-        fun onFormatChanged(encoder: Encoder, format: MediaFormat)
-        fun onEncoded(encoder: Encoder, buffer: ByteBuffer, info: MediaCodec.BufferInfo)
+        fun onFormatChanged(format: MediaFormat, type: Type)
+        fun onEncoded(buffer: ByteBuffer, info: MediaCodec.BufferInfo, type: Type)
     }
 }

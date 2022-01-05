@@ -39,8 +39,8 @@ class MyMediaRecorder(
     private var trackCount = 0
     private val trackIds = MutableList(NUM_TRACKS) { UNINITIALIZED }
 
-    override fun onFormatChanged(encoder: Encoder, format: MediaFormat) {
-        val index = encoder.type.ordinal
+    override fun onFormatChanged(format: MediaFormat, type: Encoder.Type) {
+        val index = type.ordinal
         synchronized(this) {
             if (trackIds[index] != UNINITIALIZED) return
             trackIds[index] = muxer.addTrack(format)
@@ -52,22 +52,22 @@ class MyMediaRecorder(
         }
     }
 
-    override fun onEncoded(encoder: Encoder, buffer: ByteBuffer, info: MediaCodec.BufferInfo) {
+    override fun onEncoded(buffer: ByteBuffer, info: MediaCodec.BufferInfo, type: Encoder.Type) {
         if (!isMuxerAvailable) return
-        val trackId = trackIds[encoder.type.ordinal]
+        val trackId = trackIds[type.ordinal]
         muxer.writeSampleData(trackId, buffer, info)
 
         val byteArray = ByteArray(info.size)
         buffer.position(info.offset).limit(info.offset + info.size)
         buffer.get(byteArray)
-        callback.onRecorded(byteArray, info.presentationTimeUs, encoder.type)
+        callback.onRecorded(byteArray, info.presentationTimeUs, type)
     }
 
     fun prepare() {
         isMuxerAvailable = false
         trackIds.replaceAll { UNINITIALIZED }
-        videoEncoder.prepare()
-        audioEncoder.prepare()
+        videoEncoder.configure()
+        audioEncoder.configure()
     }
 
     fun start() {

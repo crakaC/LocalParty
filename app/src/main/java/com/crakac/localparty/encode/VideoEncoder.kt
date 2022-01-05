@@ -5,15 +5,17 @@ import android.media.MediaCodecInfo
 import android.media.MediaFormat
 import android.view.Surface
 
-private const val FRAME_RATE = 30
-private const val BIT_RATE = 3 * 1024 * 1024 // 3Mbps
-private const val I_FRAME_INTERVAL_SEC = 2.0f
-private const val REPEAT_FRAMES_AFTER_MICRO_SEC = 1_000_000L / 30
-private const val MIME = MediaFormat.MIMETYPE_VIDEO_AVC
-private const val TAG = "VideoEncoder"
-
 class VideoEncoder(width: Int, height: Int, private val callback: Encoder.Callback) :
     Encoder, MediaCodecCallback() {
+    companion object {
+        private const val FRAME_RATE = 30
+        private const val BIT_RATE = 3 * 1024 * 1024 // 3Mbps
+        private const val I_FRAME_INTERVAL_SEC = 2.0f
+        private const val REPEAT_FRAMES_AFTER_MICRO_SEC = 1_000_000L / 30
+        private const val MIME = MediaFormat.MIMETYPE_VIDEO_AVC
+        private const val TAG = "VideoEncoder"
+    }
+
     override val type = Encoder.Type.Video
     lateinit var inputSurface: Surface
         private set
@@ -40,15 +42,15 @@ class VideoEncoder(width: Int, height: Int, private val callback: Encoder.Callba
         info: MediaCodec.BufferInfo
     ) {
         val buffer = codec.getOutputBuffer(index) ?: throw RuntimeException("Output buffer is null")
-        callback.onEncoded(this, buffer, info)
+        callback.onEncoded(buffer, info, type)
         codec.releaseOutputBuffer(index, false)
     }
 
     override fun onOutputFormatChanged(codec: MediaCodec, format: MediaFormat) {
-        callback.onFormatChanged(this, format)
+        callback.onFormatChanged(format, type)
     }
 
-    override fun prepare() {
+    override fun configure() {
         codec.configure(format, null, null, MediaCodec.CONFIGURE_FLAG_ENCODE)
         inputSurface = codec.createInputSurface()
     }

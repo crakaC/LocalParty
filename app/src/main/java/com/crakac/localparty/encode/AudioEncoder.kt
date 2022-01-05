@@ -4,23 +4,25 @@ import android.annotation.SuppressLint
 import android.media.*
 import android.media.audiofx.AcousticEchoCanceler
 import android.util.Log
+import com.crakac.localparty.encode.AudioEncoderConfig.Companion.BIT_RATE
+import com.crakac.localparty.encode.AudioEncoderConfig.Companion.BYTES_PER_FRAME
+import com.crakac.localparty.encode.AudioEncoderConfig.Companion.CHANNEL_CONFIG
+import com.crakac.localparty.encode.AudioEncoderConfig.Companion.CHANNEL_COUNT
+import com.crakac.localparty.encode.AudioEncoderConfig.Companion.MIME_TYPE_AAC
+import com.crakac.localparty.encode.AudioEncoderConfig.Companion.NANOS_PER_MICROS
+import com.crakac.localparty.encode.AudioEncoderConfig.Companion.NANOS_PER_SECOND
+import com.crakac.localparty.encode.AudioEncoderConfig.Companion.SAMPLE_RATE
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import java.util.concurrent.atomic.AtomicBoolean
 
-private const val NANOS_PER_SECOND = 1_000_000_000L
-private const val NANOS_PER_MICROS = 1_000L
-private const val MIME_TYPE_AAC = MediaFormat.MIMETYPE_AUDIO_AAC
-private const val CHANNEL_CONFIG = AudioFormat.CHANNEL_IN_STEREO
-private const val CHANNEL_COUNT = 2
-private const val BYTES_PER_FRAME = 2 * CHANNEL_COUNT
-private const val SAMPLE_RATE = 44_100
-private const val BIT_RATE = CHANNEL_COUNT * 64 * 1024 // 64kbps per channel
-private const val TAG = "AudioEncoder"
-
 class AudioEncoder(private val callback: Encoder.Callback) : Encoder {
+    companion object {
+        private val TAG = AudioEncoder::class.java.simpleName
+    }
+
     private val readScope = createSingleThreadScope("read")
     private val writeScope = createSingleThreadScope("write")
     private var readJob: Job? = null
@@ -72,7 +74,7 @@ class AudioEncoder(private val callback: Encoder.Callback) : Encoder {
         return timestampNanos / NANOS_PER_MICROS
     }
 
-    override fun prepare() {
+    override fun configure() {
         codec.configure(format, null, null, MediaCodec.CONFIGURE_FLAG_ENCODE)
     }
 
@@ -116,7 +118,7 @@ class AudioEncoder(private val callback: Encoder.Callback) : Encoder {
                 val bufferIndex = codec.dequeueOutputBuffer(bufferInfo, 1000L)
                 if (bufferIndex == MediaCodec.INFO_TRY_AGAIN_LATER) return@synchronized
                 if (bufferIndex == MediaCodec.INFO_OUTPUT_FORMAT_CHANGED) {
-                    callback.onFormatChanged(this@AudioEncoder, codec.outputFormat)
+                    callback.onFormatChanged(codec.outputFormat, type)
                     return@synchronized
                 }
 
@@ -130,7 +132,7 @@ class AudioEncoder(private val callback: Encoder.Callback) : Encoder {
                         .position(bufferInfo.offset)
                         .limit(bufferInfo.offset + bufferInfo.size)
                     outputBuffer.get(audioBuffer, 0, bufferInfo.size)
-                    callback.onEncoded(this@AudioEncoder, outputBuffer, bufferInfo)
+                    callback.onEncoded(outputBuffer, bufferInfo, type)
                     codec.releaseOutputBuffer(bufferIndex, false)
                 }
 
