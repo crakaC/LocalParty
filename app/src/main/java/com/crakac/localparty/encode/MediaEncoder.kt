@@ -2,6 +2,7 @@ package com.crakac.localparty.encode
 
 import android.media.MediaCodec
 import android.media.MediaFormat
+import android.util.Log
 import android.view.Surface
 import java.nio.ByteBuffer
 
@@ -16,7 +17,7 @@ class MediaEncoder(
 
     interface MediaEncoderCallback {
         fun onEncoded(data: ByteArray, presentationTimeUs: Long, type: Encoder.Type)
-        fun onFormatChanged(csd: ByteArray, type: Encoder.Type)
+        fun onCodecSpecificData(csd: ByteArray, type: Encoder.Type)
     }
 
     /**
@@ -28,11 +29,14 @@ class MediaEncoder(
         get() = videoEncoder.inputSurface
 
     private val videoEncoder = VideoEncoder(width, height, this)
-    private val audioEncoder = AsyncAudioEncoder(this)
+    private val audioEncoder = AudioEncoder(this)
 
     override fun onFormatChanged(format: MediaFormat, type: Encoder.Type) {
-        val csd = format.getByteBuffer("csd-0")?.array() ?: return
-        callback.onFormatChanged(csd, type)
+    }
+
+    override fun onCSD(csd: ByteArray, type: Encoder.Type) {
+        Log.d(TAG, "onCSD csd=[${csd.joinToString()}]")
+        callback.onCodecSpecificData(csd, type)
     }
 
     override fun onEncoded(buffer: ByteBuffer, info: MediaCodec.BufferInfo, type: Encoder.Type) {

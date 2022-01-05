@@ -11,6 +11,7 @@ interface Encoder : Codec {
 
     interface Callback {
         fun onFormatChanged(format: MediaFormat, type: Type)
+        fun onCSD(csd: ByteArray, type: Type) {}
         fun onEncoded(buffer: ByteBuffer, info: MediaCodec.BufferInfo, type: Type)
     }
 }

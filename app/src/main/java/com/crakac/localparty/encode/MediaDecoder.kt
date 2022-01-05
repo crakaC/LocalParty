@@ -193,4 +193,8 @@ class MediaDecoder(
         if(!isRunning.get()) return
         audioQueue.offer(Sample(codecSpecificData, 0L, MediaCodec.BUFFER_FLAG_CODEC_CONFIG))
     }
+    fun configureVideoCodec(codecSpecificData: ByteArray){
+        if(!isRunning.get()) return
+        videoQueue.offer(Sample(codecSpecificData, 0L, MediaCodec.BUFFER_FLAG_CODEC_CONFIG))
+    }
 }

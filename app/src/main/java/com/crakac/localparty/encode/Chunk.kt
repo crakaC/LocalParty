@@ -1,6 +1,6 @@
 package com.crakac.localparty.encode
 
-enum class ChunkType { Video, Audio, AudioConfig }
+enum class ChunkType { Video, Audio, VideoCSD, AudioCSD }
 data class Chunk(
     val type: ChunkType,
     val dataSize: Int,

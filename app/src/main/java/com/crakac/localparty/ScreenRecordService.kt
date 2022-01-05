@@ -49,16 +49,6 @@ class ScreenRecordService : Service() {
         }
         queue.offer(Chunk(chunkType, data.size, presentationTimeUs, data))
     }
-    private val onFormatChanged = fun(format: MediaFormat, type: Encoder.Type) {
-        if (type == Encoder.Type.Audio) {
-            val data = format.getByteBuffer("csd-0")?.array()
-            if (data == null) {
-                Log.d(TAG, "csd-0 is null")
-                return
-            }
-            queue.offer(Chunk(ChunkType.AudioConfig, data.size, 0L, data))
-        }
-    }
 
     private fun connect(address: InetAddress, port: Int) {
         networkThread = thread {
@@ -170,10 +160,12 @@ class ScreenRecordService : Service() {
                     type: Encoder.Type
                 ) = this@ScreenRecordService.onEncoded(data, presentationTimeUs, type)
 
-                override fun onFormatChanged(csd: ByteArray, type: Encoder.Type) {
-                    if (type == Encoder.Type.Audio) {
-                        queue.offer(Chunk(ChunkType.AudioConfig, csd.size, 0L, csd))
+                override fun onCodecSpecificData(csd: ByteArray, type: Encoder.Type) {
+                    val chunkType = when(type){
+                        Encoder.Type.Video -> ChunkType.VideoCSD
+                        Encoder.Type.Audio -> ChunkType.AudioCSD
                     }
+                    queue.offer(Chunk(chunkType, csd.size, 0L, csd))
                 }
             })
             encoder!!.prepare()

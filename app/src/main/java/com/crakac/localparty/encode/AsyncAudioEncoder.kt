@@ -11,8 +11,11 @@ class AsyncAudioEncoder(private val callback: Encoder.Callback) :
         private val TAG = AsyncAudioEncoder::class.java.simpleName
     }
 
+    val type = Encoder.Type.Audio
+    private val sampleRate = AudioEncoderConfig.SAMPLE_RATE
+
     private val audioBufferSizeInBytes = AudioRecord.getMinBufferSize(
-        AudioEncoderConfig.SAMPLE_RATE,
+        sampleRate,
         AudioEncoderConfig.CHANNEL_CONFIG,
         AudioFormat.ENCODING_PCM_16BIT
     )
@@ -22,7 +25,7 @@ class AsyncAudioEncoder(private val callback: Encoder.Callback) :
         .setAudioSource(MediaRecorder.AudioSource.VOICE_COMMUNICATION)
         .setAudioFormat(
             AudioFormat.Builder()
-                .setSampleRate(AudioEncoderConfig.SAMPLE_RATE)
+                .setSampleRate(sampleRate)
                 .setEncoding(AudioFormat.ENCODING_PCM_16BIT)
                 .setChannelMask(AudioEncoderConfig.CHANNEL_CONFIG)
                 .build()
@@ -45,23 +48,20 @@ class AsyncAudioEncoder(private val callback: Encoder.Callback) :
         }
 
     private var totalNumFramesRead = 0L
-
-    // https://github.com/google/mediapipe/blob/master/mediapipe/java/com/google/mediapipe/components/MicrophoneHelper.java
-    private fun getTimestamp(framePosition: Long): Long {
-        val audioTimestamp = AudioTimestamp()
-        audioRecord.getTimestamp(audioTimestamp, AudioTimestamp.TIMEBASE_MONOTONIC)
-        val referenceFrame = audioTimestamp.framePosition
-        val referenceTimestamp = audioTimestamp.nanoTime
-        val timestampNanos =
-            referenceTimestamp + (framePosition - referenceFrame) * AudioEncoderConfig.NANOS_PER_SECOND / AudioEncoderConfig.SAMPLE_RATE
-        return timestampNanos / AudioEncoderConfig.NANOS_PER_MICROS
-    }
-
-    override fun onCodecInputBufferAvailable(codec: MediaCodec, index: Int) {
-        val inputBuffer = codec.getInputBuffer(index) ?: return
+    override fun onCodecInputBufferAvailable(
+        codec: MediaCodec,
+        inputBuffer: ByteBuffer,
+        index: Int
+    ) {
         val readBytes = audioRecord.read(audioBuffer, 0, audioBufferSizeInBytes)
         inputBuffer.put(audioBuffer)
-        codec.queueInputBuffer(index, 0, readBytes, getTimestamp(totalNumFramesRead), 0)
+        codec.queueInputBuffer(
+            index,
+            0,
+            readBytes,
+            audioRecord.getTimestampMicros(totalNumFramesRead, sampleRate),
+            0
+        )
         totalNumFramesRead += readBytes / AudioEncoderConfig.BYTES_PER_FRAME
     }
 
@@ -71,7 +71,7 @@ class AsyncAudioEncoder(private val callback: Encoder.Callback) :
         info: MediaCodec.BufferInfo,
         index: Int
     ) {
-        callback.onEncoded(buffer, info, Encoder.Type.Audio)
+        callback.onEncoded(buffer, info, type)
         codec.releaseOutputBuffer(index, false)
     }
 
@@ -81,11 +81,11 @@ class AsyncAudioEncoder(private val callback: Encoder.Callback) :
         totalNumFramesRead = 0L
     }
 
-    override fun onRequestEOS() {
+    override fun onRequestEOS(codec: MediaCodec) {
         audioRecord.stop()
     }
 
-    override fun onCodecOutputFormatChanged(codec: MediaCodec, format: MediaFormat) {
-        callback.onFormatChanged(format, Encoder.Type.Audio)
+    override fun onCodecSpecificData(csd: ByteArray) {
+        callback.onCSD(csd, type)
     }
 }

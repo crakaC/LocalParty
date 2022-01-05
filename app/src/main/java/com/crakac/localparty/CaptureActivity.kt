@@ -62,6 +62,12 @@ class CaptureActivity : AppCompatActivity(), SurfaceHolder.Callback {
                                 if (chunk.isPartial) break
 
                                 when (chunk.type) {
+                                    ChunkType.VideoCSD -> {
+                                        mediaSync?.configureVideoCodec(chunk.data)
+                                    }
+                                    ChunkType.AudioCSD -> {
+                                        mediaSync?.configureAudioCodec(chunk.data)
+                                    }
                                     ChunkType.Video -> {
                                         mediaSync?.enqueueVideoData(
                                             chunk.data,
@@ -73,9 +79,6 @@ class CaptureActivity : AppCompatActivity(), SurfaceHolder.Callback {
                                             chunk.data,
                                             chunk.presentationTimeUs
                                         )
-                                    }
-                                    ChunkType.AudioConfig -> {
-                                        mediaSync?.configureAudioCodec(chunk.data)
                                     }
                                 }
                                 chunk = null

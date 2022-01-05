@@ -1,11 +1,27 @@
 package com.crakac.localparty.encode
 
+import android.media.AudioRecord
+import android.media.AudioTimestamp
 import android.util.Log
 import kotlinx.coroutines.CoroutineExceptionHandler
 import kotlinx.coroutines.CoroutineName
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.asCoroutineDispatcher
 import java.util.concurrent.Executors
+
+
+// https://github.com/google/mediapipe/blob/master/mediapipe/java/com/google/mediapipe/components/MicrophoneHelper.java
+const val NANOS_PER_SECOND = 1_000_000_000L
+const val NANOS_PER_MICROS = 1_000L
+fun AudioRecord.getTimestampMicros(framePosition: Long, sampleRate: Int): Long {
+    val audioTimestamp = AudioTimestamp()
+    getTimestamp(audioTimestamp, AudioTimestamp.TIMEBASE_MONOTONIC)
+    val referenceFrame = audioTimestamp.framePosition
+    val referenceTimestamp = audioTimestamp.nanoTime
+    val timestampNanos =
+        referenceTimestamp + (framePosition - referenceFrame) * NANOS_PER_SECOND / sampleRate
+    return timestampNanos / NANOS_PER_MICROS
+}
 
 fun createSingleThreadScope(name: String) = CoroutineScope(
     Executors.newSingleThreadExecutor().asCoroutineDispatcher() +

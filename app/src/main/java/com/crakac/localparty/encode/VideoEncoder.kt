@@ -4,9 +4,10 @@ import android.media.MediaCodec
 import android.media.MediaCodecInfo
 import android.media.MediaFormat
 import android.view.Surface
+import java.nio.ByteBuffer
 
 class VideoEncoder(width: Int, height: Int, private val callback: Encoder.Callback) :
-    Encoder, MediaCodecCallback() {
+    AsyncCodec(MIME, isEncoder = true) {
     companion object {
         private const val FRAME_RATE = 30
         private const val BIT_RATE = 3 * 1024 * 1024 // 3Mbps
@@ -15,12 +16,12 @@ class VideoEncoder(width: Int, height: Int, private val callback: Encoder.Callba
         private const val MIME = MediaFormat.MIMETYPE_VIDEO_AVC
         private const val TAG = "VideoEncoder"
     }
+    val type = Encoder.Type.Video
 
-    override val type = Encoder.Type.Video
     lateinit var inputSurface: Surface
         private set
 
-    private val format: MediaFormat =
+    override val format: MediaFormat =
         MediaFormat.createVideoFormat(MIME, width, height).apply {
             setInteger(
                 MediaFormat.KEY_COLOR_FORMAT,
@@ -32,38 +33,29 @@ class VideoEncoder(width: Int, height: Int, private val callback: Encoder.Callba
             setLong(MediaFormat.KEY_REPEAT_PREVIOUS_FRAME_AFTER, REPEAT_FRAMES_AFTER_MICRO_SEC)
         }
 
-    private val codec = MediaCodec.createEncoderByType(MIME).apply {
-        setCallback(this@VideoEncoder)
-    }
-
-    override fun onOutputBufferAvailable(
+    override fun onCodecOutputBufferAvailable(
         codec: MediaCodec,
-        index: Int,
-        info: MediaCodec.BufferInfo
+        buffer: ByteBuffer,
+        info: MediaCodec.BufferInfo,
+        index: Int
     ) {
-        val buffer = codec.getOutputBuffer(index) ?: throw RuntimeException("Output buffer is null")
         callback.onEncoded(buffer, info, type)
         codec.releaseOutputBuffer(index, false)
     }
 
-    override fun onOutputFormatChanged(codec: MediaCodec, format: MediaFormat) {
+    override fun onCodecOutputFormatChanged(codec: MediaCodec, format: MediaFormat) {
         callback.onFormatChanged(format, type)
     }
 
-    override fun configure() {
-        codec.configure(format, null, null, MediaCodec.CONFIGURE_FLAG_ENCODE)
+    override fun onCodecSpecificData(csd: ByteArray) {
+        callback.onCSD(csd, type)
+    }
+
+    override fun onConfigured(codec: MediaCodec) {
         inputSurface = codec.createInputSurface()
     }
 
-    override fun start() {
-        codec.start()
-    }
-
-    override fun stop() {
-        codec.stop()
-    }
-
-    override fun release() {
-        codec.release()
+    override fun onRequestEOS(codec: MediaCodec) {
+        codec.signalEndOfInputStream()
     }
 }
