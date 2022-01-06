@@ -6,6 +6,7 @@ import android.media.MediaMuxer
 import android.view.Surface
 import java.io.FileDescriptor
 import java.nio.ByteBuffer
+import kotlin.concurrent.thread
 
 
 private const val NUM_TRACKS = 2 // video, audio
@@ -15,12 +16,8 @@ class MyMediaRecorder(
     fileDescriptor: FileDescriptor,
     width: Int,
     height: Int,
-    private val callback: RecorderCallback
+    private val callback: MediaEncoder.MediaEncoderCallback
 ) : Encoder.Callback {
-
-    fun interface RecorderCallback {
-        fun onRecorded(data: ByteArray, presentationTimeUs: Long, type: Encoder.Type)
-    }
 
     private val muxer = MediaMuxer(fileDescriptor, MediaMuxer.OutputFormat.MUXER_OUTPUT_MPEG_4)
 
@@ -52,6 +49,10 @@ class MyMediaRecorder(
         }
     }
 
+    override fun onCSD(csd: ByteArray, type: Encoder.Type) {
+        callback.onCodecSpecificData(csd, type)
+    }
+
     override fun onEncoded(buffer: ByteBuffer, info: MediaCodec.BufferInfo, type: Encoder.Type) {
         if (!isMuxerAvailable) return
         val trackId = trackIds[type.ordinal]
@@ -60,7 +61,7 @@ class MyMediaRecorder(
         val byteArray = ByteArray(info.size)
         buffer.position(info.offset).limit(info.offset + info.size)
         buffer.get(byteArray)
-        callback.onRecorded(byteArray, info.presentationTimeUs, type)
+        callback.onEncoded(byteArray, info.presentationTimeUs, type)
     }
 
     fun prepare() {
@@ -78,7 +79,12 @@ class MyMediaRecorder(
     fun stop() {
         videoEncoder.stop()
         audioEncoder.stop()
-        muxer.stop()
+        thread{
+            while(videoEncoder.isRunning || audioEncoder.isRunning){
+                Thread.sleep(50)
+            }
+            muxer.stop()
+        }
     }
 
     fun release() {

@@ -85,6 +85,10 @@ class AsyncAudioEncoder(private val callback: Encoder.Callback) :
         audioRecord.stop()
     }
 
+    override fun onCodecOutputFormatChanged(codec: MediaCodec, format: MediaFormat) {
+        callback.onFormatChanged(format, type)
+    }
+
     override fun onCodecSpecificData(csd: ByteArray) {
         callback.onCSD(csd, type)
     }

@@ -4,11 +4,8 @@ import android.media.MediaCodec
 import android.media.MediaFormat
 import java.nio.ByteBuffer
 
-interface Encoder : Codec {
+interface Encoder {
     enum class Type { Video, Audio }
-
-    val type: Type
-
     interface Callback {
         fun onFormatChanged(format: MediaFormat, type: Type)
         fun onCSD(csd: ByteArray, type: Type) {}

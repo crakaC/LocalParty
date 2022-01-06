@@ -8,7 +8,6 @@ import android.content.Context
 import android.content.Intent
 import android.hardware.display.DisplayManager
 import android.hardware.display.VirtualDisplay
-import android.media.MediaFormat
 import android.media.projection.MediaProjection
 import android.media.projection.MediaProjectionManager
 import android.net.Uri
@@ -42,12 +41,26 @@ class ScreenRecordService : Service() {
     private var networkThread: Thread? = null
 
     private val queue = LinkedBlockingDeque<Chunk>()
-    private val onEncoded = fun(data: ByteArray, presentationTimeUs: Long, type: Encoder.Type) {
-        val chunkType = when (type) {
-            Encoder.Type.Video -> ChunkType.Video
-            Encoder.Type.Audio -> ChunkType.Audio
+    private val encoderCallback = object : MediaEncoder.MediaEncoderCallback {
+        override fun onEncoded(
+            data: ByteArray,
+            presentationTimeUs: Long,
+            type: Encoder.Type
+        ) {
+            val chunkType = when (type) {
+                Encoder.Type.Video -> ChunkType.Video
+                Encoder.Type.Audio -> ChunkType.Audio
+            }
+            queue.offer(Chunk(chunkType, data.size, presentationTimeUs, data))
         }
-        queue.offer(Chunk(chunkType, data.size, presentationTimeUs, data))
+
+        override fun onCodecSpecificData(csd: ByteArray, type: Encoder.Type) {
+            val chunkType = when (type) {
+                Encoder.Type.Video -> ChunkType.VideoCSD
+                Encoder.Type.Audio -> ChunkType.AudioCSD
+            }
+            queue.offer(Chunk(chunkType, csd.size, 0L, csd))
+        }
     }
 
     private fun connect(address: InetAddress, port: Int) {
@@ -139,7 +152,7 @@ class ScreenRecordService : Service() {
         if (shouldSaveRecord) {
             contentUri = createContentUri()
             val fd = contentResolver.openFileDescriptor(contentUri, "w")!!.fileDescriptor
-            recorder = MyMediaRecorder(fd, width, height, onEncoded)
+            recorder = MyMediaRecorder(fd, width, height, encoderCallback)
             recorder!!.prepare()
             virtualDisplay = projection.createVirtualDisplay(
                 "LocalParty",
@@ -153,21 +166,7 @@ class ScreenRecordService : Service() {
             )
             recorder!!.start()
         } else {
-            encoder = MediaEncoder(width, height, object : MediaEncoder.MediaEncoderCallback {
-                override fun onEncoded(
-                    data: ByteArray,
-                    presentationTimeUs: Long,
-                    type: Encoder.Type
-                ) = this@ScreenRecordService.onEncoded(data, presentationTimeUs, type)
-
-                override fun onCodecSpecificData(csd: ByteArray, type: Encoder.Type) {
-                    val chunkType = when(type){
-                        Encoder.Type.Video -> ChunkType.VideoCSD
-                        Encoder.Type.Audio -> ChunkType.AudioCSD
-                    }
-                    queue.offer(Chunk(chunkType, csd.size, 0L, csd))
-                }
-            })
+            encoder = MediaEncoder(width, height, encoderCallback)
             encoder!!.prepare()
             virtualDisplay = projection.createVirtualDisplay(
                 "LocalParty",
@@ -238,7 +237,7 @@ class ScreenRecordService : Service() {
             data: Intent,
             address: InetAddress,
             port: Int,
-            save: Boolean = false
+            save: Boolean = true
         ): Intent {
             return Intent(context, ScreenRecordService::class.java)
                 .putExtra(KEY_DATA, data)

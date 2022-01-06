@@ -14,10 +14,9 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
-import java.util.concurrent.atomic.AtomicBoolean
 import kotlin.concurrent.thread
 
-class AudioEncoder(private val callback: Encoder.Callback) : Encoder {
+class AudioEncoder(private val callback: Encoder.Callback) {
     companion object {
         private val TAG = AudioEncoder::class.java.simpleName
     }
@@ -27,9 +26,10 @@ class AudioEncoder(private val callback: Encoder.Callback) : Encoder {
     private var readJob: Job? = null
     private var writeJob: Job? = null
 
-    private val isRunning = AtomicBoolean(false)
+    var isRunning: Boolean = false
+        private set
 
-    override val type = Encoder.Type.Audio
+    private val type = Encoder.Type.Audio
     private val sampleRate = SAMPLE_RATE
     private val audioBufferSizeInBytes = AudioRecord.getMinBufferSize(
         sampleRate,
@@ -63,16 +63,16 @@ class AudioEncoder(private val callback: Encoder.Callback) : Encoder {
 
     private val codec = MediaCodec.createEncoderByType(MIME_TYPE_AAC)
 
-    override fun configure() {
+    fun configure() {
         codec.configure(format, null, null, MediaCodec.CONFIGURE_FLAG_ENCODE)
     }
 
-    override fun start() {
-        if(isRunning.get()){
+    fun start() {
+        if (isRunning) {
             Log.d(TAG, "already started")
             return
         }
-        isRunning.set(true)
+        isRunning = true
 
         echoCanceler?.enabled = true
         audioRecord.startRecording()
@@ -84,7 +84,7 @@ class AudioEncoder(private val callback: Encoder.Callback) : Encoder {
 
     private fun read() = readScope.launch {
         var totalNumFramesRead = 0L
-        while (isActive && isRunning.get()) {
+        while (isActive && isRunning) {
             val readBytes = audioRecord.read(audioBuffer, 0, audioBufferSizeInBytes)
             val bufferIndex = codec.dequeueInputBuffer(1000L)
             if (bufferIndex == MediaCodec.INFO_TRY_AGAIN_LATER) continue
@@ -104,7 +104,7 @@ class AudioEncoder(private val callback: Encoder.Callback) : Encoder {
 
     private fun write() = writeScope.launch {
         val bufferInfo = MediaCodec.BufferInfo()
-        while (isActive && isRunning.get()) {
+        while (isActive && isRunning) {
 
             val bufferIndex = codec.dequeueOutputBuffer(bufferInfo, 1000L)
             if (bufferIndex == MediaCodec.INFO_TRY_AGAIN_LATER) continue
@@ -142,12 +142,12 @@ class AudioEncoder(private val callback: Encoder.Callback) : Encoder {
         }
     }
 
-    override fun stop() {
-        if (!isRunning.get()) {
+    fun stop() {
+        if (!isRunning) {
             Log.d(TAG, "not running")
             return
         }
-        isRunning.set(false)
+        isRunning = false
         signalEOS()
         readJob?.cancel()
         readJob = null
@@ -157,7 +157,7 @@ class AudioEncoder(private val callback: Encoder.Callback) : Encoder {
         audioRecord.stop()
     }
 
-    override fun release() {
+    fun release() {
         audioRecord.release()
         codec.release()
         readScope.cancel()
