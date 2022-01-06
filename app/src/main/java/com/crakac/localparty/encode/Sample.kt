@@ -1,6 +1,6 @@
 package com.crakac.localparty.encode
 
-internal data class Sample(val data: ByteArray, val presentationTimeUs: Long, val flag: Int = 0) {
+data class Sample(val data: ByteArray, val presentationTimeUs: Long, val flag: Int = 0) {
     override fun equals(other: Any?): Boolean {
         if (this === other) return true
         if (javaClass != other?.javaClass) return false

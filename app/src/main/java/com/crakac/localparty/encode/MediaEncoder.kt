@@ -29,7 +29,7 @@ class MediaEncoder(
         get() = videoEncoder.inputSurface
 
     private val videoEncoder = VideoEncoder(width, height, this)
-    private val audioEncoder = AudioEncoder(this)
+    private val audioEncoder = AsyncAudioEncoder(this)
 
     override fun onFormatChanged(format: MediaFormat, type: Encoder.Type) {
     }
@@ -65,5 +65,4 @@ class MediaEncoder(
         videoEncoder.release()
         audioEncoder.release()
     }
-
 }

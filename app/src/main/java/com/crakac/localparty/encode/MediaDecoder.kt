@@ -6,8 +6,8 @@ import android.os.HandlerThread
 import android.util.Log
 import android.view.Surface
 import java.nio.ByteBuffer
-import java.util.concurrent.LinkedBlockingDeque
 import java.util.concurrent.atomic.AtomicBoolean
+import kotlin.concurrent.thread
 
 class MediaDecoder(
     outputSurface: Surface,
@@ -20,19 +20,17 @@ class MediaDecoder(
         private const val CHANNEL_COUNT = 2
     }
 
-    private val mediaSyncCallback = object : MediaSync.Callback() {
+    private val mediaSyncCallback: MediaSync.Callback = object : MediaSync.Callback() {
         override fun onAudioBufferConsumed(
             sync: MediaSync,
             audioBuffer: ByteBuffer,
             bufferId: Int
         ) {
-            if (!isRunning.get()) return
             runCatching {
-                audioDecoder.releaseOutputBuffer(bufferId, false)
+                audioDecoder.releaseOutputBuffer(bufferId)
             }
         }
     }
-
     private val handlerThread = HandlerThread("MediaSyncHandler").apply { start() }
     private val mediaSync = MediaSync().apply {
         setSurface(outputSurface)
@@ -60,97 +58,22 @@ class MediaDecoder(
         .setTransferMode(AudioTrack.MODE_STREAM)
         .build()
 
-    private val audioHandlerThread = HandlerThread("AudioDecoder").apply { start() }
-    private val audioCallback: MediaCodec.Callback =
-        object : MediaCodecCallback("AudioDecoderCallback") {
-            override fun onInputBufferAvailable(codec: MediaCodec, index: Int) {
-                try {
-                    if (!isRunning.get()) return
-                    val buffer = codec.getInputBuffer(index) ?: return
-                    while (isRunning.get() && audioQueue.isEmpty()) {
-                        Thread.sleep(10)
-                    }
-                    val (data, presentationTimeUs, flag) = audioQueue.poll() ?: return
-                    buffer.put(data, 0, data.size)
-                    codec.queueInputBuffer(index, 0, data.size, presentationTimeUs, flag)
-                } catch (e: Exception) {
-                    Log.w(TAG, e.stackTraceToString())
-                }
-            }
-
-            override fun onOutputBufferAvailable(
-                codec: MediaCodec, index: Int, info: MediaCodec.BufferInfo
-            ) {
-                if (!isRunning.get()) {
-                    return
-                }
-                try {
-                    val audioBuffer: ByteBuffer = codec.getOutputBuffer(index) ?: return
-                    mediaSync.queueAudio(audioBuffer, index, info.presentationTimeUs)
-                    // audioBuffer will be released at MediaSync.Callback#onAudioBufferConsumed()
-                    // Need not to call codec.releaseOutputBuffer() here.
-                } catch (e: Exception) {
-                    Log.w(TAG, e.stackTraceToString())
-                }
-            }
+    private val audioCallback = object: AudioDecoder.Callback{
+        override fun onDecoded(buffer: ByteBuffer, index: Int, presentationTimeUs: Long) {
+            if(!isRunning.get()) return
+            mediaSync.queueAudio(buffer, index, presentationTimeUs)
         }
-    private val audioDecoder =
-        MediaCodec.createDecoderByType(MediaFormat.MIMETYPE_AUDIO_AAC).apply {
-            setCallback(audioCallback, Handler(audioHandlerThread.looper))
-        }
-    private val audioFormat =
-        MediaFormat.createAudioFormat(MediaFormat.MIMETYPE_AUDIO_AAC, SAMPLE_RATE, CHANNEL_COUNT)
-
-    private val videoHandlerThread = HandlerThread("VideoDecoder").apply { start() }
-    private val videoCallback: MediaCodec.Callback =
-        object : MediaCodecCallback("VideoDecoderCallback") {
-            override fun onInputBufferAvailable(codec: MediaCodec, index: Int) {
-                if (!isRunning.get()) return
-                try {
-                    val buffer = codec.getInputBuffer(index) ?: return
-                    while (isRunning.get() && videoQueue.isEmpty()) {
-                        Thread.sleep(10)
-                    }
-                    val (data, presentationTimeUs, flag) = videoQueue.poll() ?: return
-                    buffer.put(data, 0, data.size)
-                    codec.queueInputBuffer(index, 0, data.size, presentationTimeUs, flag)
-                } catch (e: Exception) {
-                    Log.w(TAG, e.stackTraceToString())
-                }
-            }
-
-            override fun onOutputBufferAvailable(
-                codec: MediaCodec,
-                index: Int,
-                info: MediaCodec.BufferInfo
-            ) {
-                if (!isRunning.get()) return
-                try {
-                    // surface timestamp must contain media presentation time in nanoseconds.
-                    codec.releaseOutputBuffer(index, info.presentationTimeUs * 1000)
-                } catch (e: Exception) {
-                    Log.w(TAG, e.stackTraceToString())
-                }
-            }
-        }
-    private val videoDecoder =
-        MediaCodec.createDecoderByType(MediaFormat.MIMETYPE_VIDEO_AVC).apply {
-            setCallback(videoCallback, Handler(videoHandlerThread.looper))
-        }
-    private val videoFormat =
-        MediaFormat.createVideoFormat(MediaFormat.MIMETYPE_VIDEO_AVC, width, height)
-
-    private val audioQueue = LinkedBlockingDeque<Sample>()
-    private val videoQueue = LinkedBlockingDeque<Sample>()
+    }
+    private val audioDecoder = AudioDecoder(audioCallback)
+    private val videoDecoder = VideoDecoder(width, height, syncSurface)
 
     private var isRunning = AtomicBoolean(false)
-    private val handlerThreads = arrayOf(handlerThread, audioHandlerThread, videoHandlerThread)
 
     init {
         mediaSync.setAudioTrack(audioTrack)
-        audioDecoder.configure(audioFormat, null, null, 0)
-        videoDecoder.configure(videoFormat, syncSurface, null, 0)
-        videoDecoder.setVideoScalingMode(MediaCodec.VIDEO_SCALING_MODE_SCALE_TO_FIT_WITH_CROPPING)
+        audioDecoder.configure()
+        videoDecoder.configure()
+        videoDecoder.setScalingMode(MediaCodec.VIDEO_SCALING_MODE_SCALE_TO_FIT_WITH_CROPPING)
     }
 
     fun start() {
@@ -162,10 +85,10 @@ class MediaDecoder(
 
     fun stop() {
         Log.d(TAG, "stop()")
-        isRunning.set(false)
+        if(!isRunning.getAndSet(false)){
+            return
+        }
         mediaSync.flush()
-        audioQueue.clear()
-        videoQueue.clear()
         audioDecoder.stop()
         videoDecoder.stop()
     }
@@ -176,25 +99,25 @@ class MediaDecoder(
         audioDecoder.release()
         videoDecoder.release()
         audioTrack.release()
-        handlerThreads.forEach { it.quitSafely() }
+        handlerThread.quitSafely()
     }
 
     fun enqueueAudioData(data: ByteArray, presentationTimeUs: Long) {
         if (!isRunning.get()) return
-        audioQueue.offer(Sample(data, presentationTimeUs))
+        audioDecoder.enqueue(Sample(data, presentationTimeUs))
     }
 
     fun enqueueVideoData(data: ByteArray, presentationTimeUs: Long) {
         if (!isRunning.get()) return
-        videoQueue.offer(Sample(data, presentationTimeUs))
+        videoDecoder.enqueue(Sample(data, presentationTimeUs))
     }
 
     fun configureAudioCodec(codecSpecificData: ByteArray){
         if(!isRunning.get()) return
-        audioQueue.offer(Sample(codecSpecificData, 0L, MediaCodec.BUFFER_FLAG_CODEC_CONFIG))
+        audioDecoder.enqueue(Sample(codecSpecificData, 0L, MediaCodec.BUFFER_FLAG_CODEC_CONFIG))
     }
     fun configureVideoCodec(codecSpecificData: ByteArray){
         if(!isRunning.get()) return
-        videoQueue.offer(Sample(codecSpecificData, 0L, MediaCodec.BUFFER_FLAG_CODEC_CONFIG))
+        videoDecoder.enqueue(Sample(codecSpecificData, 0L, MediaCodec.BUFFER_FLAG_CODEC_CONFIG))
     }
 }

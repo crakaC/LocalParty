@@ -5,19 +5,27 @@ import android.media.MediaFormat
 import android.os.Handler
 import android.os.HandlerThread
 import android.util.Log
+import android.view.Surface
 import java.nio.ByteBuffer
 import kotlin.concurrent.thread
 
 /**
  * Wrapper class of MediaCodec
  */
-abstract class AsyncCodec(mime: String, val isEncoder: Boolean) :
+abstract class AsyncCodec(
+    mime: String,
+    val isEncoder: Boolean,
+    private val outputSurface: Surface? = null
+) :
     MediaCodec.Callback() {
     companion object {
         private val TAG = AsyncCodec::class.java.simpleName
-        private const val RELEASE_TIMEOUT_MILLIS = 3000L
+        private const val RELEASE_TIMEOUT_MILLIS = 1000L
     }
-    enum class State { Initial, Running, RequestEOS, WaitEOS, Stopped }
+
+    private val codecTag = if (isEncoder) "$mime encoder" else "$mime decoder"
+
+    enum class State { Initial, Running, RequestEOS, Stopped, Released }
 
     open fun onStart() {}
     open fun onConfigured(codec: MediaCodec) {}
@@ -47,20 +55,34 @@ abstract class AsyncCodec(mime: String, val isEncoder: Boolean) :
     private val handlerThread = HandlerThread("$TAG:$mime").apply { start() }
     private val handler = Handler(handlerThread.looper)
 
-    private var state: State = State.Initial
-    private val codec = MediaCodec.createEncoderByType(mime).also {
-        it.setCallback(this, handler)
-    }
+    var state: State = State.Initial
+        private set
+
+    val isRunning: Boolean
+        get() = state == State.Running
+
+    protected val codec: MediaCodec =
+        (if (isEncoder)
+            MediaCodec.createEncoderByType(mime)
+        else
+            MediaCodec.createDecoderByType(mime)).also { it.setCallback(this, handler) }
+
     abstract val format: MediaFormat
 
     final override fun onInputBufferAvailable(codec: MediaCodec, index: Int) {
-        if (state == State.RequestEOS) {
-            codec.queueInputBuffer(index, 0, 0, 0, MediaCodec.BUFFER_FLAG_END_OF_STREAM)
-            state = State.WaitEOS
-            return
+        try {
+            if (state == State.RequestEOS) {
+                codec.queueInputBuffer(index, 0, 0, 0, MediaCodec.BUFFER_FLAG_END_OF_STREAM)
+                Log.d(TAG, "queued EOS: $codecTag")
+                state = State.Stopped
+                return
+            }
+            if (!isRunning) return
+            val buffer = codec.getInputBuffer(index) ?: return
+            onCodecInputBufferAvailable(codec, buffer, index)
+        } catch (e: IllegalStateException) {
+            Log.w(TAG, e.stackTraceToString())
         }
-        val buffer = codec.getInputBuffer(index) ?: return
-        onCodecInputBufferAvailable(codec, buffer, index)
     }
 
     final override fun onOutputBufferAvailable(
@@ -68,27 +90,31 @@ abstract class AsyncCodec(mime: String, val isEncoder: Boolean) :
         index: Int,
         info: MediaCodec.BufferInfo
     ) {
-        if (info.flags and MediaCodec.BUFFER_FLAG_END_OF_STREAM != 0) {
-            Log.d(TAG, "END_OF_STREAM")
-            codec.releaseOutputBuffer(index, false)
-            state = State.Stopped
-            onEOS()
-            return
-        }
+        runCatching {
+            if (info.flags and MediaCodec.BUFFER_FLAG_END_OF_STREAM != 0) {
+                Log.d(TAG, "END_OF_STREAM $codecTag")
+                codec.releaseOutputBuffer(index, false)
+                state = State.Stopped
+                onEOS()
+                return
+            }
 
-        if (info.flags and MediaCodec.BUFFER_FLAG_CODEC_CONFIG != 0) {
-            // Obtain Codec-specific Data
-            Log.d(TAG, "CODEC_CONFIG")
-            val buffer = codec.getOutputBuffer(index) ?: return
-            buffer.position(info.offset).limit(info.offset + info.size)
-            val csd = ByteArray(info.size)
-            buffer.get(csd)
-            Log.d(TAG, "csd = [${csd.joinToString{it.toInt().and(0xFF).toString(16)}}]")
-            onCodecSpecificData(csd)
-            codec.releaseOutputBuffer(index, false)
-        } else {
-            val buffer = codec.getOutputBuffer(index) ?: return
-            onCodecOutputBufferAvailable(codec, buffer, info, index)
+            if (!isRunning) return
+
+            if (info.flags and MediaCodec.BUFFER_FLAG_CODEC_CONFIG != 0) {
+                // Obtain Codec-specific Data
+                Log.d(TAG, "CODEC_CONFIG $codecTag")
+                val buffer = codec.getOutputBuffer(index) ?: return
+                buffer.position(info.offset).limit(info.offset + info.size)
+                val csd = ByteArray(info.size)
+                buffer.get(csd)
+                Log.d(TAG, "csd = [${csd.joinToString { it.toInt().and(0xFF).toString(16) }}]")
+                onCodecSpecificData(csd)
+                codec.releaseOutputBuffer(index, false)
+            } else {
+                val buffer = codec.getOutputBuffer(index) ?: return
+                onCodecOutputBufferAvailable(codec, buffer, info, index)
+            }
         }
     }
 
@@ -101,13 +127,12 @@ abstract class AsyncCodec(mime: String, val isEncoder: Boolean) :
     }
 
     final override fun onOutputFormatChanged(codec: MediaCodec, format: MediaFormat) {
-        Log.d(TAG, format.toString())
         onCodecOutputFormatChanged(codec, format)
     }
 
     fun configure() {
         val flag = if (isEncoder) MediaCodec.CONFIGURE_FLAG_ENCODE else 0
-        codec.configure(format, null, null, flag)
+        codec.configure(format, outputSurface, null, flag)
         onConfigured(codec)
     }
 
@@ -118,7 +143,7 @@ abstract class AsyncCodec(mime: String, val isEncoder: Boolean) :
     }
 
     fun stop() {
-        Log.d(TAG, "stop()")
+        Log.d(TAG, "stop() $codecTag")
         if (state != State.Running) {
             Log.d(TAG, "stop() is called but codec is not running. (state : $state)")
             return
@@ -133,11 +158,18 @@ abstract class AsyncCodec(mime: String, val isEncoder: Boolean) :
             while (state != State.Stopped && timeoutMillis > System.currentTimeMillis()) {
                 Thread.sleep(100)
             }
-            codec.release()
-            if(state != State.Stopped){
-                Log.w(TAG, "timeout")
+            Log.d(TAG, "release: $codecTag")
+            try {
+                // Some device throws IllegalStateException here
+                codec.stop()
+            } catch (e: IllegalStateException) {
+                Log.d(TAG, "$codecTag codec.stop() failed", e)
             }
-            Log.d(TAG, "released")
+            codec.release()
+            if (state != State.Stopped) {
+                Log.w(TAG, "timeout: $codecTag")
+            }
+            state = State.Released
             handlerThread.quitSafely()
         }
     }
