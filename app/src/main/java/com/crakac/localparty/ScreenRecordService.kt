@@ -2,12 +2,10 @@ package com.crakac.localparty
 
 import android.app.*
 import android.app.Activity.RESULT_OK
-import android.content.BroadcastReceiver
-import android.content.ContentValues
-import android.content.Context
-import android.content.Intent
+import android.content.*
 import android.hardware.display.DisplayManager
 import android.hardware.display.VirtualDisplay
+import android.media.MediaFormat
 import android.media.projection.MediaProjection
 import android.media.projection.MediaProjectionManager
 import android.net.Uri
@@ -36,6 +34,35 @@ class ScreenRecordService : Service() {
     private lateinit var contentUri: Uri
 
     private var shouldSaveRecord: Boolean = false
+
+    private lateinit var connectionManager: ConnectionManager
+    private val serviceConnection = object : ServiceConnection {
+        override fun onServiceConnected(name: ComponentName?, service: IBinder?) {
+            val binder = service as NearByConnectionService.NearByConnectionServiceBinder
+            Log.d(TAG, "$name is connected")
+            connectionManager = binder.getConnectionManager()
+            connectionManager.startSending()
+            networkThread = thread {
+                while (networkThread == Thread.currentThread()) {
+                    if (queue.isEmpty()) {
+                        Thread.sleep(1)
+                        continue
+                    }
+                    try {
+                        val data = queue.poll() ?: continue
+                        connectionManager.send(data.toByteArray())
+                    } catch (e: IOException) {
+                        Log.d(TAG, e.stackTraceToString())
+                        break
+                    }
+                }
+            }
+        }
+
+        override fun onServiceDisconnected(name: ComponentName?) {
+            Log.w(TAG, "NearByConnectionService is unexpectedly disconnected.")
+        }
+    }
 
     @Volatile
     private var networkThread: Thread? = null
@@ -86,6 +113,14 @@ class ScreenRecordService : Service() {
         }
     }
 
+    override fun onCreate() {
+        bindService(
+            Intent(this, NearByConnectionService::class.java),
+            serviceConnection,
+            Context.BIND_AUTO_CREATE
+        )
+    }
+
     override fun onBind(intent: Intent?): IBinder? {
         return null
     }
@@ -100,9 +135,9 @@ class ScreenRecordService : Service() {
 
         shouldSaveRecord = intent.getBooleanExtra(KEY_SAVE_RECORD, false)
 
-        val address = intent.getSerializableExtra(KEY_ADDRESS) as InetAddress
-        val port = intent.getIntExtra(KEY_PORT, 0)
-        connect(address, port)
+//        val address = intent.getSerializableExtra(KEY_ADDRESS) as InetAddress
+//        val port = intent.getIntExtra(KEY_PORT, 0)
+//        connect(address, port)
 
         val notification = createNotification()
         startForeground(NOTIFICATION_ID, notification)
@@ -131,6 +166,7 @@ class ScreenRecordService : Service() {
 
     override fun onDestroy() {
         super.onDestroy()
+        Log.d(TAG, "onDestroy")
         stopCapture()
     }
 
@@ -197,6 +233,8 @@ class ScreenRecordService : Service() {
             }
             contentResolver.update(contentUri, values, null, null)
         }
+
+        unbindService(serviceConnection)
     }
 
     private fun createContentUri(): Uri {
@@ -207,7 +245,7 @@ class ScreenRecordService : Service() {
             val values = ContentValues().apply {
                 put(MediaStore.Video.Media.DISPLAY_NAME, filename)
                 put(MediaStore.Video.Media.TITLE, filename)
-                put(MediaStore.Video.Media.MIME_TYPE, "video/avc")
+                put(MediaStore.Video.Media.MIME_TYPE, MediaFormat.MIMETYPE_VIDEO_AVC)
                 put(MediaStore.Video.Media.RELATIVE_PATH, Environment.DIRECTORY_MOVIES)
                 put(MediaStore.Video.Media.IS_PENDING, 1)
             }

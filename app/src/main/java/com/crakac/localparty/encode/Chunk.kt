@@ -13,14 +13,14 @@ data class Chunk(
         private set
 
     val actualSize: Int
-        get() = FieldSize + dataSize - remain
+        get() = HeaderSize + dataSize - remain
 
     companion object {
         /**
          * Size of fields of chunk.
          * sizeOf(type) + sizeOf(dataSize) + sizeOf(presentationTimeUs)
          */
-        private const val FieldSize = Byte.SIZE_BYTES + Int.SIZE_BYTES + Long.SIZE_BYTES
+        const val HeaderSize = Byte.SIZE_BYTES + Int.SIZE_BYTES + Long.SIZE_BYTES
         fun fromByteArray(src: ByteArray, offset: Int, limit: Int): Chunk {
             var index = offset
             val type = ChunkType.values()[src[index].toInt()]
@@ -44,7 +44,7 @@ data class Chunk(
     }
 
     fun toByteArray(): ByteArray {
-        val totalSize = FieldSize + data.size
+        val totalSize = HeaderSize + data.size
         val byteArray = ByteArray(totalSize)
         var index = 0
         byteArray[index++] = type.ordinal.toByte()

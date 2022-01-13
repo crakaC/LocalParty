@@ -6,10 +6,7 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
-import androidx.compose.material.Button
-import androidx.compose.material.Icon
-import androidx.compose.material.Surface
-import androidx.compose.material.Text
+import androidx.compose.material.*
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -46,26 +43,30 @@ fun MainContent(
     onClickEndpoint: (endpointId: String, state: ConnectionManager.EndpointState) -> Unit = { _, _ -> },
     onClickStart: () -> Unit = {},
 ) {
-    LazyColumn(
-        state = rememberLazyListState()
-    ) {
-        items(endpointStatuses) { item ->
-            val (endpoint, state) = item
-            Row(
-                modifier = Modifier
-                    .clickable { onClickEndpoint(endpoint, state) }
-                    .padding(horizontal = 8.dp, vertical = 4.dp)
-                    .background(Color.Transparent, Shapes.medium),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Text(
-                    text = state.endpointName,
-                    modifier = Modifier.padding(start = 4.dp)
-                )
-                Spacer(Modifier.width(8.dp))
-                ConnectionIcon(state.connectionState)
+    if (endpointStatuses.isEmpty()) {
+        CircularProgressIndicator(Modifier.size(48.dp))
+    } else {
+        LazyColumn(
+            state = rememberLazyListState()
+        ) {
+            items(endpointStatuses) { item ->
+                val (endpoint, state) = item
+                Row(
+                    modifier = Modifier
+                        .clickable { onClickEndpoint(endpoint, state) }
+                        .padding(horizontal = 8.dp, vertical = 4.dp)
+                        .background(Color.Transparent, Shapes.medium),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        text = state.endpointName,
+                        modifier = Modifier.padding(start = 4.dp)
+                    )
+                    Spacer(Modifier.width(8.dp))
+                    ConnectionIcon(state.connectionState)
+                }
+                Spacer(Modifier.size(8.dp))
             }
-            Spacer(Modifier.size(8.dp))
         }
     }
 

@@ -1,10 +1,14 @@
 package com.crakac.localparty
 
 import android.Manifest
+import android.content.ComponentName
+import android.content.Context
 import android.content.Intent
+import android.content.ServiceConnection
 import android.content.pm.PackageManager
 import android.os.Build
 import android.os.Bundle
+import android.os.IBinder
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
@@ -18,7 +22,20 @@ import com.crakac.localparty.ui.screen.PermissionRequestContent
 class MainActivity : ComponentActivity() {
 
     private var isPermissionFullyGranted by mutableStateOf(false)
-    private lateinit var connectionManager: ConnectionManager
+    private var connectionManager: ConnectionManager? = null
+    private var isBound by mutableStateOf(false)
+    private val serviceConnection = object : ServiceConnection {
+        override fun onServiceConnected(name: ComponentName?, service: IBinder?) {
+            val binder = service as NearByConnectionService.NearByConnectionServiceBinder
+            connectionManager = binder.getConnectionManager()
+            connectionManager?.start()
+            isBound = true
+        }
+
+        override fun onServiceDisconnected(name: ComponentName?) {
+            isBound = false
+        }
+    }
 
     private val permissionLauncher = registerForActivityResult(
         ActivityResultContracts.RequestMultiplePermissions()
@@ -28,14 +45,19 @@ class MainActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        connectionManager = ConnectionManager(this, lifecycle)
+        startService(Intent(this, NearByConnectionService::class.java))
+        bindService(
+            Intent(this, NearByConnectionService::class.java),
+            serviceConnection,
+            Context.BIND_AUTO_CREATE
+        )
         setContent {
             App {
                 if (isPermissionFullyGranted) {
                     MainContent(
-                        connectionManager.endpoints,
+                        if (isBound) connectionManager!!.endpoints else emptyList(),
                         onClickEndpoint = { endpoint, state ->
-                            connectionManager.requestConnection(endpoint, state)
+                            connectionManager?.requestConnection(endpoint, state)
                         },
                         onClickStart = {
                             startActivity(
@@ -64,9 +86,22 @@ class MainActivity : ComponentActivity() {
             isPermissionFullyGranted = false
             permissionLauncher.launch(PERMISSIONS)
         }
+        connectionManager?.start()
+    }
+
+    override fun onStop() {
+        super.onStop()
+        connectionManager?.stop()
+    }
+
+    override fun onDestroy() {
+        super.onDestroy()
+        unbindService(serviceConnection)
     }
 
     companion object {
+        private val TAG = MainActivity::class.java.simpleName
+
         @OptIn(ExperimentalStdlibApi::class)
         private val PERMISSIONS = buildList {
             add(Manifest.permission.ACCESS_FINE_LOCATION)

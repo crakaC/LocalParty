@@ -14,6 +14,6 @@ fun Activity.showInstalledAppDetails() {
     startActivity(intent)
 }
 
-fun Context.showToast(text: String){
+fun Context.showToast(text: String) {
     Toast.makeText(this, text, Toast.LENGTH_SHORT).show()
 }
