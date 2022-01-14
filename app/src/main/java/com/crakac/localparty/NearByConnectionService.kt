@@ -21,6 +21,13 @@ class NearByConnectionService : Service() {
         connectionManager = ConnectionManager(this)
     }
 
+    override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        /**
+         * If application goes to background and this service is killed, no need to restart.
+         */
+        return START_NOT_STICKY
+    }
+
     override fun onBind(intent: Intent): IBinder {
         Log.d(TAG, "onBind")
         return binder
