@@ -1,4 +1,4 @@
-package com.crakac.localparty.encode
+package com.crakac.localparty.media
 
 import android.media.AudioFormat
 import android.media.MediaFormat

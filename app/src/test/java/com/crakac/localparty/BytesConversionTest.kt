@@ -1,8 +1,8 @@
 package com.crakac.localparty
 
-import com.crakac.localparty.encode.toByteArray
-import com.crakac.localparty.encode.toInt
-import com.crakac.localparty.encode.toLong
+import com.crakac.localparty.media.toByteArray
+import com.crakac.localparty.media.toInt
+import com.crakac.localparty.media.toLong
 import org.junit.Assert
 import org.junit.Test
 import java.nio.ByteBuffer

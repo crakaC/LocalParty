@@ -1,15 +1,15 @@
-package com.crakac.localparty.encode
+package com.crakac.localparty.media
 
 import android.annotation.SuppressLint
 import android.media.*
 import android.media.audiofx.AcousticEchoCanceler
 import android.util.Log
-import com.crakac.localparty.encode.AudioEncoderConfig.Companion.BIT_RATE
-import com.crakac.localparty.encode.AudioEncoderConfig.Companion.BYTES_PER_FRAME
-import com.crakac.localparty.encode.AudioEncoderConfig.Companion.CHANNEL_CONFIG
-import com.crakac.localparty.encode.AudioEncoderConfig.Companion.CHANNEL_COUNT
-import com.crakac.localparty.encode.AudioEncoderConfig.Companion.MIME_TYPE_AAC
-import com.crakac.localparty.encode.AudioEncoderConfig.Companion.SAMPLE_RATE
+import com.crakac.localparty.media.AudioEncoderConfig.Companion.BIT_RATE
+import com.crakac.localparty.media.AudioEncoderConfig.Companion.BYTES_PER_FRAME
+import com.crakac.localparty.media.AudioEncoderConfig.Companion.CHANNEL_CONFIG
+import com.crakac.localparty.media.AudioEncoderConfig.Companion.CHANNEL_COUNT
+import com.crakac.localparty.media.AudioEncoderConfig.Companion.MIME_TYPE_AAC
+import com.crakac.localparty.media.AudioEncoderConfig.Companion.SAMPLE_RATE
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.isActive

@@ -1,4 +1,4 @@
-package com.crakac.localparty.encode
+package com.crakac.localparty.media
 
 import android.annotation.SuppressLint
 import android.media.*

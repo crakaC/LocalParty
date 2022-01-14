@@ -1,4 +1,4 @@
-package com.crakac.localparty.encode
+package com.crakac.localparty.media
 
 enum class ChunkType { Video, Audio, VideoCSD, AudioCSD }
 data class Chunk(

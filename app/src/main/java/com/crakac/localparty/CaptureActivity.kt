@@ -18,9 +18,9 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.annotation.WorkerThread
 import androidx.appcompat.app.AppCompatActivity
 import com.crakac.localparty.databinding.ActivityCaptureBinding
-import com.crakac.localparty.encode.Chunk
-import com.crakac.localparty.encode.ChunkType
-import com.crakac.localparty.encode.MediaDecoder
+import com.crakac.localparty.media.Chunk
+import com.crakac.localparty.media.ChunkType
+import com.crakac.localparty.media.MediaDecoder
 import java.io.IOException
 import java.io.InputStream
 import java.net.InetAddress

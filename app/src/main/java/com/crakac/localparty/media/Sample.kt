@@ -1,4 +1,4 @@
-package com.crakac.localparty.encode
+package com.crakac.localparty.media
 
 data class Sample(val data: ByteArray, val presentationTimeUs: Long, val flag: Int = 0) {
     override fun equals(other: Any?): Boolean {
