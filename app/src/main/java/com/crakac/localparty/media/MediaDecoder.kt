@@ -7,7 +7,6 @@ import android.util.Log
 import android.view.Surface
 import java.nio.ByteBuffer
 import java.util.concurrent.atomic.AtomicBoolean
-import kotlin.concurrent.thread
 
 class MediaDecoder(
     outputSurface: Surface,
