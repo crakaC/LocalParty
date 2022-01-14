@@ -56,8 +56,8 @@ class MainActivity : ComponentActivity() {
                 if (isPermissionFullyGranted) {
                     MainContent(
                         if (isBound) connectionManager!!.endpoints else emptyList(),
-                        onClickEndpoint = { endpoint, state ->
-                            connectionManager?.requestConnection(endpoint, state)
+                        onClickEndpoint = { endpoint, _ ->
+                            connectionManager?.requestConnection(endpoint)
                         },
                         onClickStart = {
                             startActivity(

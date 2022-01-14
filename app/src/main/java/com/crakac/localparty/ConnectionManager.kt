@@ -49,10 +49,6 @@ class ConnectionManager(context: Context) {
         }
     }
 
-    fun stopEndpoints() {
-        connectionsClient.stopAllEndpoints()
-    }
-
     @WorkerThread
     fun send(data: ByteArray) {
         outputQueue.write(data)
@@ -68,25 +64,30 @@ class ConnectionManager(context: Context) {
         Log.d(TAG, "startSending to $sendTo")
     }
 
+    fun stopSending() {
+        connectionsClient.stopAllEndpoints()
+    }
+
     private val connectionsClient = Nearby.getConnectionsClient(context)
     private val packageName = context.packageName
     private val endpointStatus = mutableStateMapOf<String, EndpointState>()
     val endpoints: List<Pair<String, EndpointState>> by derivedStateOf { endpointStatus.toList() }
     private val endpointDiscoveryCallback = object : EndpointDiscoveryCallback() {
         override fun onEndpointFound(endpointId: String, info: DiscoveredEndpointInfo) {
+            Log.d(TAG, "onEndpointFound($info)")
             val state = EndpointState(
                 info.endpointName,
                 ConnectionState.Disconnected
             )
+            if (endpointId in endpointStatus) return
             endpointStatus[endpointId] = state
             // If endpoint found, request automatically
-            requestConnection(endpointId, state)
-            Log.d(TAG, "onEndpointFound($info)")
+            requestConnection(endpointId)
         }
 
         override fun onEndpointLost(endpointId: String) {
-            endpointStatus.remove(endpointId)
             Log.d(TAG, "onEndpointLost($endpointId)")
+            endpointStatus.remove(endpointId)
         }
     }
 
@@ -113,31 +114,32 @@ class ConnectionManager(context: Context) {
 
     private val connectionLifecycleCallback = object : ConnectionLifecycleCallback() {
         override fun onConnectionInitiated(endpointId: String, info: ConnectionInfo) {
+            Log.d(TAG, "onConnectionInitiated $endpointId")
             endpointStatus[endpointId] =
                 EndpointState(
                     info.endpointName,
                     ConnectionState.Connecting
                 )
             connectionsClient.acceptConnection(endpointId, payloadCallback)
-            Log.d(TAG, "onConnectionInitiated $endpointId")
         }
 
         override fun onConnectionResult(endpointId: String, result: ConnectionResolution) {
+            Log.d(TAG, "onConnectionResult $endpointId, ${result.status}")
+            val currentStatus = endpointStatus[endpointId] ?: return
             if (result.status.isSuccess) {
-                val currentStatus =
-                    endpointStatus[endpointId]?.copy(connectionState = ConnectionState.Connected)
-                        ?: return
-                endpointStatus[endpointId] = currentStatus
+                endpointStatus[endpointId] =
+                    currentStatus.copy(connectionState = ConnectionState.Connected)
+            } else {
+                endpointStatus[endpointId] =
+                    currentStatus.copy(connectionState = ConnectionState.Disconnected)
             }
-            Log.d(TAG, "onConnectionResult $endpointId")
         }
 
         override fun onDisconnected(endpointId: String) {
-            val currentStatus =
-                endpointStatus[endpointId]?.copy(connectionState = ConnectionState.Disconnected)
-                    ?: return
-            endpointStatus[endpointId] = currentStatus
             Log.d(TAG, "onDisconnected $endpointId")
+            val currentStatus = endpointStatus[endpointId] ?: return
+            endpointStatus[endpointId] =
+                currentStatus.copy(connectionState = ConnectionState.Disconnected)
         }
     }
 
@@ -151,8 +153,11 @@ class ConnectionManager(context: Context) {
         connectionsClient.startDiscovery(packageName, endpointDiscoveryCallback, options)
     }
 
-    fun requestConnection(endpoint: String, state: EndpointState) {
+    fun requestConnection(endpoint: String) {
+        if (endpoint !in endpointStatus) throw IllegalArgumentException("$endpoint is not found")
+        Log.d(TAG, "requestConnection: $endpoint")
         connectionsClient.requestConnection(CODE, endpoint, connectionLifecycleCallback)
+        val state = endpointStatus[endpoint]!!
         endpointStatus[endpoint] = state.copy(
             connectionState = ConnectionState.Connecting
         )

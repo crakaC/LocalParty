@@ -35,12 +35,11 @@ class ScreenRecordService : Service() {
 
     private var shouldSaveRecord: Boolean = false
 
-    private lateinit var connectionManager: ConnectionManager
     private val serviceConnection = object : ServiceConnection {
         override fun onServiceConnected(name: ComponentName?, service: IBinder?) {
             val binder = service as NearByConnectionService.NearByConnectionServiceBinder
             Log.d(TAG, "$name is connected")
-            connectionManager = binder.getConnectionManager()
+            val connectionManager = binder.getConnectionManager()
             connectionManager.startSending()
             networkThread = thread {
                 while (networkThread == Thread.currentThread()) {
@@ -56,6 +55,7 @@ class ScreenRecordService : Service() {
                         break
                     }
                 }
+                connectionManager.stopSending()
             }
         }
 

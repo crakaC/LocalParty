@@ -1,5 +1,6 @@
 package com.crakac.localparty.ui.screen
 
+import androidx.compose.animation.animateContentSize
 import androidx.compose.animation.core.*
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
@@ -51,7 +52,7 @@ fun MainContent(
 ) {
     Card(
         Modifier
-            .wrapContentSize()
+            .animateContentSize()
             .widthIn(min = 64.dp, max = 240.dp),
         border = BorderStroke(Dp.Hairline, SolidColor(Color.Gray))
     ) {
@@ -59,7 +60,7 @@ fun MainContent(
             CircularProgressIndicator(
                 Modifier
                     .size(64.dp)
-                    .padding(8.dp)
+                    .padding(12.dp)
             )
         } else {
             LazyColumn(
