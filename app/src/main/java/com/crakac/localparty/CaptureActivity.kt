@@ -164,8 +164,9 @@ class CaptureActivity : AppCompatActivity(), SurfaceHolder.Callback {
 
     override fun onPictureInPictureModeChanged(
         isInPictureInPictureMode: Boolean,
-        newConfig: Configuration?
+        newConfig: Configuration
     ) {
+        super.onPictureInPictureModeChanged(isInPictureInPictureMode, newConfig)
         if (isInPictureInPictureMode) {
             binding.stopButton.visibility = View.GONE
         } else {
